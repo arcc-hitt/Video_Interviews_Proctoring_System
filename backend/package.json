@@ -9,7 +9,9 @@
     "dev": "nodemon src/index.ts",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed": "ts-node src/utils/seed.ts seed",
+    "seed:clear": "ts-node src/utils/seed.ts clear"
   },
   "keywords": [
     "video",
@@ -20,6 +22,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@types/uuid": "^10.0.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
@@ -27,7 +30,9 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.18.1",
-    "morgan": "^1.10.1"
+    "morgan": "^1.10.1",
+    "uuid": "^13.0.0",
+    "zod": "^4.1.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
