@@ -6,6 +6,18 @@ import { validateRequest } from '../middleware/validation';
 
 const router = express.Router();
 
+/**
+ * GET /api/videos/health
+ * Health check endpoint for video service
+ */
+router.get('/health', (req: Request, res: Response): void => {
+  res.json({
+    success: true,
+    message: 'Video service is healthy',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Configure multer for memory storage
 const upload = multer({
   storage: multer.memoryStorage(),

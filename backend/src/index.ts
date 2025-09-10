@@ -48,10 +48,11 @@ app.get('/health', async (req, res) => {
 
 // Import routes
 import videoRoutes from './routes/videoRoutes';
+import authRoutes from './routes/authRoutes';
 
 // API routes
 app.use('/api/videos', videoRoutes);
-// app.use('/api/auth', authRoutes);
+app.use('/api/auth', authRoutes);
 // app.use('/api/sessions', sessionRoutes);
 // app.use('/api/events', eventRoutes);
 

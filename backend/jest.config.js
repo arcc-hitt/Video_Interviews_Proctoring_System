@@ -6,15 +6,6 @@ module.exports = {
   transform: {
     '^.+\\.ts$': 'ts-jest',
   },
-  transformIgnorePatterns: [
-    'node_modules/(?!(uuid)/)'
-  ],
-  extensionsToTreatAsEsm: ['.ts'],
-  globals: {
-    'ts-jest': {
-      useESM: true
-    }
-  },
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',

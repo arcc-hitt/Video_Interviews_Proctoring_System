@@ -112,6 +112,42 @@ export const AuthUserSchema = z.object({
   role: z.nativeEnum(UserRole)
 });
 
+// User Registration Schema
+export const UserRegistrationSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6).max(100),
+  name: z.string().min(1).max(100),
+  role: z.nativeEnum(UserRole)
+});
+
+// User Login Schema
+export const UserLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1)
+});
+
+// Session Creation Schema
+export const SessionCreationSchema = z.object({
+  candidateName: z.string().min(1).max(100),
+  candidateEmail: z.string().email().optional(),
+  interviewerUserId: z.string().uuid()
+});
+
+// Session Pairing Schema
+export const SessionPairingSchema = z.object({
+  sessionId: z.string().uuid(),
+  interviewerUserId: z.string().uuid()
+});
+
+// JWT Payload Schema
+export const JWTPayloadSchema = z.object({
+  userId: z.string().uuid(),
+  email: z.string().email(),
+  role: z.nativeEnum(UserRole),
+  iat: z.number(),
+  exp: z.number()
+});
+
 // API Response Schema
 export const ApiResponseSchema = z.object({
   success: z.boolean(),
@@ -132,6 +168,11 @@ export type InterviewSession = z.infer<typeof InterviewSessionSchema>;
 export type SuspiciousEvent = z.infer<typeof SuspiciousEventSchema>;
 export type ProctoringReport = z.infer<typeof ProctoringReportSchema>;
 export type AuthUser = z.infer<typeof AuthUserSchema>;
+export type UserRegistrationInput = z.infer<typeof UserRegistrationSchema>;
+export type UserLoginInput = z.infer<typeof UserLoginSchema>;
+export type SessionCreationInput = z.infer<typeof SessionCreationSchema>;
+export type SessionPairingInput = z.infer<typeof SessionPairingSchema>;
+export type JWTPayload = z.infer<typeof JWTPayloadSchema>;
 export type ApiResponse<T = any> = {
   success: boolean;
   data?: T;
