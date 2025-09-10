@@ -171,11 +171,43 @@ export const GenerateReportSchema = z.object({
   sessionId: z.string().uuid()
 });
 
+// Video Upload Schema
+export const VideoUploadSchema = z.object({
+  sessionId: z.string().uuid(),
+  candidateId: z.string().uuid(),
+  chunkIndex: z.number().int().min(0),
+  totalChunks: z.number().int().positive(),
+  filename: z.string().min(1),
+  mimeType: z.string().min(1)
+});
+
+// Video Metadata Schema
+export const VideoMetadataSchema = z.object({
+  videoId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  candidateId: z.string().uuid(),
+  filename: z.string().min(1),
+  originalName: z.string().min(1),
+  mimeType: z.string().min(1),
+  size: z.number().positive(),
+  duration: z.number().positive().optional(),
+  resolution: z.object({
+    width: z.number().positive(),
+    height: z.number().positive()
+  }).optional(),
+  uploadedAt: z.date(),
+  processedAt: z.date().optional(),
+  storageUrl: z.string().url(),
+  thumbnailUrl: z.string().url().optional()
+});
+
 // Export Input Types
 export type CreateDetectionEventInput = z.infer<typeof CreateDetectionEventSchema>;
 export type CreateInterviewSessionInput = z.infer<typeof CreateInterviewSessionSchema>;
 export type UpdateInterviewSessionInput = z.infer<typeof UpdateInterviewSessionSchema>;
 export type GenerateReportInput = z.infer<typeof GenerateReportSchema>;
+export type VideoUploadInput = z.infer<typeof VideoUploadSchema>;
+export type VideoMetadata = z.infer<typeof VideoMetadataSchema>;
 
 // ============================================================================
 // RE-EXPORTS
