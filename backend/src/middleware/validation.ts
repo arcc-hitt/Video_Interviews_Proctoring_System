@@ -8,7 +8,7 @@ export const validateRequest = (schema: z.ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
       const validation = schema.safeParse(req.body);
-      
+
       if (!validation.success) {
         res.status(400).json({
           success: false,
@@ -38,7 +38,7 @@ export const validateParams = (schema: z.ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
       const validation = schema.safeParse(req.params);
-      
+
       if (!validation.success) {
         res.status(400).json({
           success: false,
@@ -67,7 +67,7 @@ export const validateQuery = (schema: z.ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
       const validation = schema.safeParse(req.query);
-      
+
       if (!validation.success) {
         res.status(400).json({
           success: false,
@@ -77,7 +77,8 @@ export const validateQuery = (schema: z.ZodSchema) => {
         return;
       }
 
-      req.query = validation.data as any;
+      // Merge validated data into req.query
+      Object.assign(req.query, validation.data);
       next();
     } catch (error) {
       console.error('Query validation middleware error:', error);
