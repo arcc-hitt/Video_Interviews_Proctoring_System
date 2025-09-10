@@ -3,3 +3,4 @@ export { DetectionEvent, DetectionEventDocument } from './DetectionEvent';
 export { InterviewSession, InterviewSessionDocument } from './InterviewSession';
 export { ProctoringReport, ProctoringReportDocument } from './ProctoringReport';
 export { User, UserDocument, IUser } from './User';
+export { ManualObservation, ManualObservationDocument } from './ManualObservation';

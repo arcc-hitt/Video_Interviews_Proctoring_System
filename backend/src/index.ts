@@ -50,11 +50,13 @@ app.get('/health', async (req, res) => {
 import videoRoutes from './routes/videoRoutes';
 import authRoutes from './routes/authRoutes';
 import eventRoutes from './routes/eventRoutes';
+import reportRoutes from './routes/reportRoutes';
 
 // API routes
 app.use('/api/videos', videoRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
+app.use('/api/reports', reportRoutes);
 // app.use('/api/sessions', sessionRoutes);
 
 // 404 handler - must come before error handling middleware
