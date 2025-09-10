@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import type { InterviewSession, Alert, DetectionEvent } from '../../types';
+import type { InterviewSession } from '../../types';
 import { io, Socket } from 'socket.io-client';
+import { AlertPanel, AlertHistory } from '../alerts';
+import { useAlertStreaming } from '../../hooks/useAlertStreaming';
 
 interface SessionNote {
   id: string;
@@ -30,17 +32,34 @@ export const InterviewerDashboard: React.FC = () => {
   const [activeSessions, setActiveSessions] = useState<InterviewSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<InterviewSession | null>(null);
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUsers | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [sessionNotes, setSessionNotes] = useState<SessionNote[]>([]);
   const [newNote, setNewNote] = useState('');
   const [noteSeverity, setNoteSeverity] = useState<'low' | 'medium' | 'high'>('medium');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+  const [showAlertHistory, setShowAlertHistory] = useState(false);
+
   // WebSocket and WebRTC refs
   const socketRef = useRef<Socket | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+
+  // Alert streaming hook
+  const {
+    alerts,
+    isConnected: alertStreamConnected,
+    joinSession: joinAlertSession,
+    leaveSession: leaveAlertSession,
+    sendManualFlag,
+    acknowledgeAlert,
+    clearAlerts
+  } = useAlertStreaming({
+    authToken: authState.token || '',
+    sessionId: selectedSession?.sessionId,
+    autoConnect: true,
+    maxAlerts: 50,
+    onError: (err) => setError(`Alert streaming error: ${err.message}`)
+  });
 
   // Fetch active sessions
   const fetchActiveSessions = useCallback(async () => {
@@ -94,30 +113,12 @@ export const InterviewerDashboard: React.FC = () => {
       setConnectedUsers(data.connectedUsers);
     });
 
-    socket.on('detection_event_broadcast', (event: DetectionEvent) => {
-      const alert: Alert = {
-        type: event.eventType,
-        message: getAlertMessage(event),
-        timestamp: new Date(event.timestamp),
-        severity: getAlertSeverity(event.eventType)
-      };
-      setAlerts(prev => [alert, ...prev.slice(0, 49)]); // Keep last 50 alerts
-    });
-
-    socket.on('manual_flag_broadcast', (data) => {
-      const alert: Alert = {
-        type: 'unauthorized-item', // Generic type for manual flags
-        message: `Manual flag: ${data.description}`,
-        timestamp: new Date(data.timestamp),
-        severity: data.severity
-      };
-      setAlerts(prev => [alert, ...prev.slice(0, 49)]);
-    });
+    // Note: Alert handling is now managed by useAlertStreaming hook
 
     socket.on('session_status_update', (data) => {
-      setActiveSessions(prev => 
-        prev.map(session => 
-          session.sessionId === data.sessionId 
+      setActiveSessions(prev =>
+        prev.map(session =>
+          session.sessionId === data.sessionId
             ? { ...session, status: data.status }
             : session
         )
@@ -144,10 +145,10 @@ export const InterviewerDashboard: React.FC = () => {
 
     const pc = peerConnectionRef.current!;
     await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-    
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    
+
     socketRef.current?.emit('video_stream_answer', {
       sessionId: selectedSession?.sessionId,
       toUserId: data.fromUserId,
@@ -198,13 +199,16 @@ export const InterviewerDashboard: React.FC = () => {
     if (!socketRef.current) return;
 
     setSelectedSession(session);
-    setAlerts([]);
+    clearAlerts();
     setSessionNotes([]);
-    
+
     socketRef.current.emit('join_session', {
       sessionId: session.sessionId,
       role: 'interviewer'
     });
+
+    // Join alert streaming for this session
+    joinAlertSession(session.sessionId);
 
     // Fetch session details
     try {
@@ -231,12 +235,16 @@ export const InterviewerDashboard: React.FC = () => {
     if (selectedSession && socketRef.current) {
       socketRef.current.emit('leave_session', selectedSession.sessionId);
     }
-    
+
+    // Leave alert streaming
+    leaveAlertSession();
+
     setSelectedSession(null);
     setConnectedUsers(null);
-    setAlerts([]);
+    clearAlerts();
     setSessionNotes([]);
-    
+    setShowAlertHistory(false);
+
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -314,6 +322,10 @@ export const InterviewerDashboard: React.FC = () => {
           severity: noteSeverity
         };
         setSessionNotes(prev => [note, ...prev]);
+
+        // Also send as manual flag for real-time alerts
+        sendManualFlag(newNote, noteSeverity);
+
         setNewNote('');
       }
     } catch (err) {
@@ -322,35 +334,6 @@ export const InterviewerDashboard: React.FC = () => {
   };
 
   // Helper functions
-  const getAlertMessage = (event: DetectionEvent): string => {
-    switch (event.eventType) {
-      case 'focus-loss':
-        return 'Candidate looking away from screen';
-      case 'absence':
-        return 'Candidate not present in frame';
-      case 'multiple-faces':
-        return 'Multiple faces detected';
-      case 'unauthorized-item':
-        return `Unauthorized item detected: ${event.metadata?.objectType || 'unknown'}`;
-      default:
-        return 'Suspicious activity detected';
-    }
-  };
-
-  const getAlertSeverity = (eventType: string): 'low' | 'medium' | 'high' => {
-    switch (eventType) {
-      case 'focus-loss':
-        return 'low';
-      case 'absence':
-        return 'medium';
-      case 'multiple-faces':
-      case 'unauthorized-item':
-        return 'high';
-      default:
-        return 'medium';
-    }
-  };
-
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'low':
@@ -372,7 +355,7 @@ export const InterviewerDashboard: React.FC = () => {
   useEffect(() => {
     fetchActiveSessions();
     const cleanup = initializeWebSocket();
-    
+
     return cleanup;
   }, [fetchActiveSessions, initializeWebSocket]);
 
@@ -458,7 +441,7 @@ export const InterviewerDashboard: React.FC = () => {
                   Refresh
                 </button>
               </div>
-              
+
               {activeSessions.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-gray-500">No active sessions found</p>
@@ -483,11 +466,10 @@ export const InterviewerDashboard: React.FC = () => {
                           </p>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            session.status === 'active' 
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${session.status === 'active'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-100 text-gray-800'
+                            }`}>
                             {session.status}
                           </span>
                           <button
@@ -528,7 +510,7 @@ export const InterviewerDashboard: React.FC = () => {
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="aspect-video bg-gray-900 rounded-lg overflow-hidden">
                     <video
                       ref={videoRef}
@@ -552,17 +534,16 @@ export const InterviewerDashboard: React.FC = () => {
                       <span className="font-medium">Started:</span> {formatTime(new Date(selectedSession.startTime))}
                     </div>
                     <div>
-                      <span className="font-medium">Status:</span> 
-                      <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
-                        selectedSession.status === 'active' 
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
+                      <span className="font-medium">Status:</span>
+                      <span className={`ml-2 px-2 py-1 text-xs rounded-full ${selectedSession.status === 'active'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-800'
+                        }`}>
                         {selectedSession.status}
                       </span>
                     </div>
                     <div>
-                      <span className="font-medium">Connected Users:</span> 
+                      <span className="font-medium">Connected Users:</span>
                       {connectedUsers ? (
                         <span className="ml-2">
                           {connectedUsers.candidates.length} candidate(s), {connectedUsers.interviewers.length} interviewer(s)
@@ -571,6 +552,15 @@ export const InterviewerDashboard: React.FC = () => {
                         <span className="ml-2">Loading...</span>
                       )}
                     </div>
+                    <div>
+                      <span className="font-medium">Alert Stream:</span>
+                      <span className={`ml-2 px-2 py-1 text-xs rounded-full ${alertStreamConnected
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
+                        }`}>
+                        {alertStreamConnected ? 'Connected' : 'Disconnected'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -578,27 +568,30 @@ export const InterviewerDashboard: React.FC = () => {
               {/* Alerts and Controls */}
               <div className="space-y-6">
                 {/* Real-time Alerts */}
-                <div className="bg-white shadow rounded-lg p-6">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">
-                    Real-time Alerts
-                  </h3>
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {alerts.length === 0 ? (
-                      <p className="text-gray-500 text-sm">No alerts yet</p>
-                    ) : (
-                      alerts.map((alert, index) => (
-                        <div
-                          key={index}
-                          className={`p-3 rounded-md ${getSeverityColor(alert.severity)}`}
-                        >
-                          <div className="flex justify-between items-start">
-                            <p className="text-sm font-medium">{alert.message}</p>
-                            <span className="text-xs">{formatTime(alert.timestamp)}</span>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                {!showAlertHistory ? (
+                  <AlertPanel
+                    alerts={alerts}
+                    onAlertAcknowledge={acknowledgeAlert}
+                    onManualFlag={sendManualFlag}
+                    sessionId={selectedSession?.sessionId}
+                    className="h-96"
+                  />
+                ) : (
+                  <AlertHistory
+                    sessionId={selectedSession?.sessionId || ''}
+                    alerts={alerts}
+                    className="h-96"
+                  />
+                )}
+
+                {/* Toggle between live alerts and history */}
+                <div className="flex justify-center">
+                  <button
+                    onClick={() => setShowAlertHistory(!showAlertHistory)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                  >
+                    {showAlertHistory ? 'Show Live Alerts' : 'Show Alert History'}
+                  </button>
                 </div>
 
                 {/* Session Notes */}
@@ -606,7 +599,7 @@ export const InterviewerDashboard: React.FC = () => {
                   <h3 className="text-lg font-medium text-gray-900 mb-4">
                     Session Notes
                   </h3>
-                  
+
                   {/* Add Note Form */}
                   <div className="space-y-3 mb-4">
                     <textarea
