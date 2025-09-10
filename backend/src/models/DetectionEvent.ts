@@ -38,8 +38,7 @@ const DetectionEventMetadataSchema = new Schema({
 const DetectionEventSchema = new Schema<DetectionEventDocument>({
   sessionId: { 
     type: String, 
-    required: true, 
-    index: true,
+    required: true,
     validate: {
       validator: function(v: string) {
         // UUID v4 validation regex
@@ -50,8 +49,7 @@ const DetectionEventSchema = new Schema<DetectionEventDocument>({
   },
   candidateId: { 
     type: String, 
-    required: true, 
-    index: true,
+    required: true,
     validate: {
       validator: function(v: string) {
         return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
@@ -62,13 +60,11 @@ const DetectionEventSchema = new Schema<DetectionEventDocument>({
   eventType: {
     type: String,
     enum: Object.values(EventType),
-    required: true,
-    index: true
+    required: true
   },
   timestamp: { 
     type: Date, 
-    required: true, 
-    index: true 
+    required: true
   },
   duration: { 
     type: Number, 
@@ -131,5 +127,13 @@ DetectionEventSchema.statics.getEventSummary = function(sessionId: string) {
   ]);
 };
 
+// Add interface for static methods
+interface DetectionEventModel extends mongoose.Model<DetectionEventDocument> {
+  findBySession(sessionId: string): mongoose.Query<DetectionEventDocument[], DetectionEventDocument>;
+  findByCandidate(candidateId: string): mongoose.Query<DetectionEventDocument[], DetectionEventDocument>;
+  findByEventType(eventType: EventType): mongoose.Query<DetectionEventDocument[], DetectionEventDocument>;
+  getEventSummary(sessionId: string): mongoose.Aggregate<any[]>;
+}
+
 // Create and export the model
-export const DetectionEvent = mongoose.model<DetectionEventDocument>('DetectionEvent', DetectionEventSchema);
+export const DetectionEvent = mongoose.model<DetectionEventDocument, DetectionEventModel>('DetectionEvent', DetectionEventSchema);
