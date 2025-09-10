@@ -3,7 +3,7 @@
 export interface DetectionEvent {
   sessionId: string;
   candidateId: string;
-  eventType: 'focus-loss' | 'absence' | 'multiple-faces' | 'unauthorized-item';
+  eventType: 'focus-loss' | 'absence' | 'multiple-faces' | 'unauthorized-item' | 'manual_flag' | 'inactivity' | 'long_session' | 'heartbeat' | string;
   timestamp: Date;
   duration?: number;
   confidence: number;
@@ -41,7 +41,7 @@ export interface SuspiciousEvent {
 }
 
 export interface Alert {
-  type: 'focus-loss' | 'absence' | 'multiple-faces' | 'unauthorized-item';
+  type: 'focus-loss' | 'absence' | 'multiple-faces' | 'unauthorized-item' | 'manual_flag' | 'inactivity' | 'long_session' | 'heartbeat' | string;
   message: string;
   timestamp: Date;
   severity: 'low' | 'medium' | 'high';

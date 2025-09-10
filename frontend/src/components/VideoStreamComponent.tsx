@@ -96,7 +96,11 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
 
   const stopStream = useCallback(() => {
     if (state.stream && state.stream.getTracks) {
-      state.stream.getTracks().forEach(track => track.stop());
+      try {
+        state.stream.getTracks().forEach(track => track.stop());
+      } catch (error) {
+        console.warn('Error stopping tracks:', error);
+      }
     }
 
     if (frameIntervalRef.current) {
