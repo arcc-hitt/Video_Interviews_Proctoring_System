@@ -46,7 +46,11 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// API routes will be added here
+// Import routes
+import videoRoutes from './routes/videoRoutes';
+
+// API routes
+app.use('/api/videos', videoRoutes);
 // app.use('/api/auth', authRoutes);
 // app.use('/api/sessions', sessionRoutes);
 // app.use('/api/events', eventRoutes);
