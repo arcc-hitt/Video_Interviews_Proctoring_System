@@ -304,3 +304,6 @@ export * from './validation';
 
 // Export API types
 export * from './api';
+
+// Export WebSocket types
+export * from './websocket';
