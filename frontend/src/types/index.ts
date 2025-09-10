@@ -46,3 +46,36 @@ export interface Alert {
   timestamp: Date;
   severity: 'low' | 'medium' | 'high';
 }
+
+// Video streaming related types
+export interface VideoStreamProps {
+  onFrameCapture?: (imageData: ImageData) => void;
+  onRecordingStart?: () => void;
+  onRecordingStop?: () => void;
+  onError?: (error: VideoStreamError) => void;
+}
+
+export interface VideoStreamState {
+  stream: MediaStream | null;
+  isStreaming: boolean;
+  isRecording: boolean;
+  recordedChunks: Blob[];
+  error: VideoStreamError | null;
+}
+
+export interface VideoStreamError {
+  type: 'CAMERA_ACCESS_DENIED' | 'DEVICE_NOT_FOUND' | 'RECORDING_FAILED' | 'STREAM_FAILED';
+  message: string;
+  originalError?: Error;
+}
+
+export interface MediaConstraints {
+  video: {
+    width: { ideal: number };
+    height: { ideal: number };
+    frameRate: { ideal: number };
+    facingMode: string;
+    deviceId?: { exact: string };
+  };
+  audio: boolean | { deviceId: { exact: string } };
+}
