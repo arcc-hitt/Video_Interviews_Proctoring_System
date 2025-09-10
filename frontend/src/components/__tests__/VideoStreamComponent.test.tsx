@@ -8,6 +8,8 @@ const mockStream = {
     { stop: vi.fn() },
     { stop: vi.fn() }
   ]),
+  active: true,
+  id: 'mock-stream-id'
 };
 
 describe('VideoStreamComponent', () => {
