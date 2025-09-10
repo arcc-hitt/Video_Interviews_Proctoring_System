@@ -223,3 +223,51 @@ export interface EventStreamConfig {
   retryAttempts: number;
   retryDelay: number; // milliseconds
 }
+
+// Authentication related types
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: 'candidate' | 'interviewer';
+  createdAt: Date;
+}
+
+export interface AuthState {
+  user: User | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+}
+
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+export interface SignupData {
+  email: string;
+  password: string;
+  name: string;
+  role: 'candidate' | 'interviewer';
+}
+
+export interface AuthResponse {
+  user: User;
+  token: string;
+  message: string;
+}
+
+export interface AuthError {
+  message: string;
+  field?: string;
+}
+
+export interface AuthContextType {
+  authState: AuthState;
+  login: (credentials: LoginCredentials) => Promise<void>;
+  signup: (data: SignupData) => Promise<void>;
+  logout: () => void;
+  clearError: () => void;
+}
