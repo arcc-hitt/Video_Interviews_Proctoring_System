@@ -1,12 +1,36 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { CandidateInterface } from '../CandidateInterface';
 
 export const CandidateDashboard: React.FC = () => {
   const { authState, logout } = useAuth();
+  const [sessionId, setSessionId] = useState<string>('');
+  const [showInterface, setShowInterface] = useState(false);
 
   const handleLogout = () => {
     logout();
   };
+
+  const handleJoinSession = () => {
+    if (sessionId.trim()) {
+      setShowInterface(true);
+    }
+  };
+
+  const handleSessionEnd = () => {
+    setShowInterface(false);
+    setSessionId('');
+  };
+
+  // If showing the interview interface, render it
+  if (showInterface) {
+    return (
+      <CandidateInterface 
+        sessionId={sessionId}
+        onSessionEnd={handleSessionEnd}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -37,20 +61,45 @@ export const CandidateDashboard: React.FC = () => {
         <div className="px-4 py-6 sm:px-0">
           <div className="bg-white shadow rounded-lg p-6">
             <h2 className="text-lg font-medium text-gray-900 mb-4">
-              Interview Sessions
+              Join Interview Session
             </h2>
-            <p className="text-gray-600">
-              Your interview interface will be available here. This is a placeholder for the candidate video capture interface that will be implemented in future tasks.
+            <p className="text-gray-600 mb-6">
+              Enter the session ID provided by your interviewer to join the interview session.
             </p>
             
-            <div className="mt-6 p-4 bg-blue-50 rounded-md">
+            <div className="max-w-md">
+              <label htmlFor="sessionId" className="block text-sm font-medium text-gray-700 mb-2">
+                Session ID
+              </label>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  id="sessionId"
+                  value={sessionId}
+                  onChange={(e) => setSessionId(e.target.value)}
+                  placeholder="Enter session ID..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+                <button
+                  onClick={handleJoinSession}
+                  disabled={!sessionId.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Join Session
+                </button>
+              </div>
+            </div>
+            
+            <div className="mt-8 p-4 bg-blue-50 rounded-md">
               <h3 className="text-sm font-medium text-blue-800 mb-2">
-                Next Steps:
+                Before You Start:
               </h3>
               <ul className="text-sm text-blue-700 space-y-1">
-                <li>• Video capture interface will be added</li>
-                <li>• Session management controls</li>
-                <li>• Real-time monitoring integration</li>
+                <li>• Ensure your camera and microphone are working</li>
+                <li>• Find a quiet, well-lit room</li>
+                <li>• Remove any unauthorized items from your workspace</li>
+                <li>• Test your internet connection</li>
+                <li>• Have a valid government ID ready if required</li>
               </ul>
             </div>
           </div>
