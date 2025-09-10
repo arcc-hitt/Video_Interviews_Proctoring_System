@@ -79,3 +79,147 @@ export interface MediaConstraints {
   };
   audio: boolean | { deviceId: { exact: string } };
 }
+
+// Face detection related types
+export interface FaceLandmarks {
+  x: number;
+  y: number;
+  z?: number;
+}
+
+export interface Face {
+  landmarks: FaceLandmarks[];
+  boundingBox: BoundingBox;
+  confidence: number;
+}
+
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface FaceDetectionResult {
+  faces: Face[];
+  landmarks: FaceLandmarks[];
+  confidence: number;
+  timestamp: Date;
+}
+
+export interface GazeDirection {
+  x: number;
+  y: number;
+  isLookingAtScreen: boolean;
+  confidence: number;
+}
+
+export interface FocusStatus {
+  isFocused: boolean;
+  gazeDirection: GazeDirection;
+  faceCount: number;
+  isPresent: boolean;
+  confidence: number;
+}
+
+export interface FocusEvent {
+  type: 'focus-loss' | 'absence' | 'multiple-faces' | 'focus-restored' | 'presence-restored';
+  timestamp: Date;
+  duration?: number;
+  confidence: number;
+  metadata: {
+    faceCount?: number;
+    gazeDirection?: GazeDirection;
+    previousState?: string;
+  };
+}
+
+export interface FocusDetectionService {
+  detectFace(imageData: ImageData): Promise<FaceDetectionResult>;
+  trackGazeDirection(landmarks: FaceLandmarks[]): GazeDirection;
+  checkFocusStatus(gazeDirection: GazeDirection, faceCount: number): FocusStatus;
+  startFocusTimer(eventType: 'looking-away' | 'absent'): void;
+  stopFocusTimer(eventType: 'looking-away' | 'absent'): void;
+  onFocusEvent?: (event: FocusEvent) => void;
+}
+
+// Object detection related types
+export interface DetectedObject {
+  class: string;
+  confidence: number;
+  boundingBox: BoundingBox;
+  timestamp: Date;
+}
+
+export interface UnauthorizedItem {
+  type: 'phone' | 'book' | 'notes' | 'electronic-device' | 'laptop' | 'tablet';
+  confidence: number;
+  position: BoundingBox;
+  firstDetected: Date;
+  lastSeen: Date;
+  persistenceDuration: number; // in milliseconds
+}
+
+export interface ObjectDetectionResult {
+  objects: DetectedObject[];
+  unauthorizedItems: UnauthorizedItem[];
+  timestamp: Date;
+  frameConfidence: number;
+}
+
+export interface ObjectDetectionService {
+  detectObjects(imageData: ImageData): Promise<DetectedObject[]>;
+  classifyUnauthorizedItems(objects: DetectedObject[]): UnauthorizedItem[];
+  trackObjectPresence(item: UnauthorizedItem): void;
+  getUnauthorizedItems(): UnauthorizedItem[];
+  clearExpiredItems(): void;
+  onUnauthorizedItemDetected?: (item: UnauthorizedItem) => void;
+}
+
+export interface ObjectEvent {
+  type: 'unauthorized-item-detected' | 'unauthorized-item-removed';
+  item: UnauthorizedItem;
+  timestamp: Date;
+  confidence: number;
+}
+
+// Event processing and aggregation types
+export interface ProcessedEvent {
+  id: string;
+  sessionId: string;
+  candidateId: string;
+  eventType: DetectionEvent['eventType'];
+  timestamp: Date;
+  duration?: number;
+  confidence: number;
+  metadata: Record<string, any>;
+  isProcessed: boolean;
+  isDuplicate: boolean;
+}
+
+export interface EventAggregation {
+  eventType: DetectionEvent['eventType'];
+  count: number;
+  totalDuration: number;
+  averageConfidence: number;
+  firstOccurrence: Date;
+  lastOccurrence: Date;
+  events: ProcessedEvent[];
+}
+
+export interface EventProcessingService {
+  processEvent(event: DetectionEvent): ProcessedEvent;
+  aggregateEvents(events: ProcessedEvent[]): Map<string, EventAggregation>;
+  deduplicateEvents(events: ProcessedEvent[]): ProcessedEvent[];
+  streamEventToBackend(event: ProcessedEvent): Promise<void>;
+  getEventQueue(): ProcessedEvent[];
+  clearProcessedEvents(): void;
+  onEventProcessed?: (event: ProcessedEvent) => void;
+}
+
+export interface EventStreamConfig {
+  batchSize: number;
+  flushInterval: number; // milliseconds
+  retryAttempts: number;
+  retryDelay: number; // milliseconds
+}
