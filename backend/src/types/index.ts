@@ -32,6 +32,19 @@ export enum UnauthorizedItemType {
   ELECTRONIC_DEVICE = 'electronic-device'
 }
 
+export enum ObservationType {
+  SUSPICIOUS_BEHAVIOR = 'suspicious_behavior',
+  TECHNICAL_ISSUE = 'technical_issue',
+  GENERAL_NOTE = 'general_note',
+  VIOLATION = 'violation'
+}
+
+export enum Severity {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high'
+}
+
 // ============================================================================
 // ZOD VALIDATION SCHEMAS
 // ============================================================================
@@ -89,6 +102,18 @@ export const SuspiciousEventSchema = z.object({
   description: z.string().min(1).max(500)
 });
 
+// Manual Observation Schema
+export const ManualObservationSchema = z.object({
+  observationId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  interviewerId: z.string().uuid(),
+  timestamp: z.date(),
+  observationType: z.nativeEnum(ObservationType),
+  description: z.string().min(1).max(1000),
+  severity: z.nativeEnum(Severity),
+  flagged: z.boolean()
+});
+
 // Proctoring Report Schema
 export const ProctoringReportSchema = z.object({
   reportId: z.string().uuid(),
@@ -102,6 +127,7 @@ export const ProctoringReportSchema = z.object({
   unauthorizedItemsCount: z.number().int().min(0),
   integrityScore: z.number().min(0).max(100),
   suspiciousEvents: z.array(SuspiciousEventSchema),
+  manualObservations: z.array(ManualObservationSchema).optional(),
   generatedAt: z.date()
 });
 
@@ -166,6 +192,7 @@ export type DetectionEventMetadata = z.infer<typeof DetectionEventMetadataSchema
 export type DetectionEvent = z.infer<typeof DetectionEventSchema>;
 export type InterviewSession = z.infer<typeof InterviewSessionSchema>;
 export type SuspiciousEvent = z.infer<typeof SuspiciousEventSchema>;
+export type ManualObservation = z.infer<typeof ManualObservationSchema>;
 export type ProctoringReport = z.infer<typeof ProctoringReportSchema>;
 export type AuthUser = z.infer<typeof AuthUserSchema>;
 export type UserRegistrationInput = z.infer<typeof UserRegistrationSchema>;
@@ -209,7 +236,23 @@ export const UpdateInterviewSessionSchema = InterviewSessionSchema.partial().omi
 
 // Generate Report Input Schema
 export const GenerateReportSchema = z.object({
-  sessionId: z.string().uuid()
+  sessionId: z.string().uuid(),
+  includeManualObservations: z.boolean().optional().default(true)
+});
+
+// Create Manual Observation Input Schema
+export const CreateManualObservationSchema = ManualObservationSchema.omit({
+  observationId: true,
+  timestamp: true
+}).extend({
+  timestamp: z.string().datetime().optional()
+});
+
+// Report Export Schema
+export const ReportExportSchema = z.object({
+  reportId: z.string().uuid(),
+  format: z.enum(['pdf', 'csv']),
+  includeManualObservations: z.boolean().optional().default(true)
 });
 
 // Video Upload Schema
@@ -247,6 +290,8 @@ export type CreateDetectionEventInput = z.infer<typeof CreateDetectionEventSchem
 export type CreateInterviewSessionInput = z.infer<typeof CreateInterviewSessionSchema>;
 export type UpdateInterviewSessionInput = z.infer<typeof UpdateInterviewSessionSchema>;
 export type GenerateReportInput = z.infer<typeof GenerateReportSchema>;
+export type CreateManualObservationInput = z.infer<typeof CreateManualObservationSchema>;
+export type ReportExportInput = z.infer<typeof ReportExportSchema>;
 export type VideoUploadInput = z.infer<typeof VideoUploadSchema>;
 export type VideoMetadata = z.infer<typeof VideoMetadataSchema>;
 
