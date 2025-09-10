@@ -5,6 +5,7 @@ import type {
   EventProcessingService,
   EventStreamConfig
 } from '../types';
+import { OfflineEventQueue } from './offlineEventQueue';
 
 export class DetectionEventProcessingService implements EventProcessingService {
   private eventQueue: ProcessedEvent[] = [];
@@ -12,6 +13,7 @@ export class DetectionEventProcessingService implements EventProcessingService {
   private streamingQueue: ProcessedEvent[] = [];
   private streamingTimer: number | null = null;
   private isStreaming = false;
+  private offlineQueue: OfflineEventQueue;
 
   // Configuration
   private config: EventStreamConfig = {
@@ -31,6 +33,18 @@ export class DetectionEventProcessingService implements EventProcessingService {
     if (config) {
       this.config = { ...this.config, ...config };
     }
+
+    // Initialize offline queue
+    this.offlineQueue = new OfflineEventQueue({
+      maxQueueSize: 1000,
+      syncInterval: 5000,
+      retryAttempts: 3,
+      retryDelay: 1000
+    });
+
+    // Set up sync callback for offline queue
+    this.offlineQueue.setSyncCallback(this.syncEventsToBackend.bind(this));
+
     this.startEventStreaming();
   }
 
@@ -63,6 +77,9 @@ export class DetectionEventProcessingService implements EventProcessingService {
       
       // Add to streaming queue for backend transmission
       this.addToStreamingQueue(processedEvent);
+
+      // Add to offline queue for persistence
+      this.offlineQueue.addEvent(processedEvent);
     }
 
     // Mark as processed
@@ -302,6 +319,55 @@ export class DetectionEventProcessingService implements EventProcessingService {
     
     this.clearProcessedEvents();
     this.isStreaming = false;
+    this.offlineQueue.cleanup();
+  }
+
+  /**
+   * Sync events to backend (used by offline queue)
+   */
+  private async syncEventsToBackend(events: ProcessedEvent[]): Promise<boolean> {
+    try {
+      const response = await fetch('/api/events/batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getAuthToken()}`
+        },
+        body: JSON.stringify({ events })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return result.success === true;
+    } catch (error) {
+      console.error('Failed to sync events to backend:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get authentication token (placeholder - should be injected)
+   */
+  private getAuthToken(): string {
+    // This should be injected or retrieved from auth context
+    return localStorage.getItem('auth_token') || '';
+  }
+
+  /**
+   * Get offline queue status
+   */
+  public getOfflineQueueStatus() {
+    return this.offlineQueue.getQueueStatus();
+  }
+
+  /**
+   * Manually sync offline events
+   */
+  public async syncOfflineEvents() {
+    return await this.offlineQueue.syncEvents();
   }
 }
 

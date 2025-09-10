@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useCVWorker } from '../hooks/useCVWorker';
 import type { VideoStreamProps, VideoStreamState, VideoStreamError, MediaConstraints } from '../types';
 
 const DEFAULT_CONSTRAINTS: MediaConstraints = {
@@ -21,6 +22,29 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const frameIntervalRef = useRef<number | null>(null);
+
+  // Initialize CV Worker for offloaded processing
+  const cvWorker = useCVWorker({
+    onResult: (_result) => {
+      // Process the result and call the frame capture callback
+      if (onFrameCapture) {
+        // Convert worker result to ImageData format expected by onFrameCapture
+        const imageData = new ImageData(1, 1); // Placeholder - actual implementation would extract from result
+        onFrameCapture(imageData);
+      }
+    },
+    onError: (error) => {
+      console.error('CV Worker error:', error);
+      if (onError) {
+        onError({
+          type: 'PROCESSING_ERROR',
+          message: error.message,
+          originalError: error
+        });
+      }
+    },
+    autoInitialize: true
+  });
 
   const [state, setState] = useState<VideoStreamState>({
     stream: null,
@@ -88,8 +112,8 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
     }));
   }, [state.stream]);
 
-  const captureFrame = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current || !onFrameCapture) return;
+  const captureFrame = useCallback(async () => {
+    if (!videoRef.current || !canvasRef.current) return;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -106,8 +130,23 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
 
     // Get image data for computer vision processing
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    onFrameCapture(imageData);
-  }, [onFrameCapture]);
+    
+    // Use Web Worker for processing if available, otherwise fallback to direct callback
+    if (cvWorker.isInitialized && !cvWorker.isProcessing) {
+      try {
+        await cvWorker.processFrame(imageData);
+      } catch (error) {
+        console.error('CV Worker processing failed:', error);
+        // Fallback to direct callback
+        if (onFrameCapture) {
+          onFrameCapture(imageData);
+        }
+      }
+    } else if (onFrameCapture) {
+      // Fallback to direct callback
+      onFrameCapture(imageData);
+    }
+  }, [cvWorker, onFrameCapture]);
 
   const startRecording = useCallback(() => {
     if (!state.stream) {

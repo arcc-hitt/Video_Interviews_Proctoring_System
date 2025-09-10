@@ -64,7 +64,7 @@ export interface VideoStreamState {
 }
 
 export interface VideoStreamError {
-  type: 'CAMERA_ACCESS_DENIED' | 'DEVICE_NOT_FOUND' | 'RECORDING_FAILED' | 'STREAM_FAILED';
+  type: 'CAMERA_ACCESS_DENIED' | 'DEVICE_NOT_FOUND' | 'RECORDING_FAILED' | 'STREAM_FAILED' | 'PROCESSING_ERROR';
   message: string;
   originalError?: Error;
 }

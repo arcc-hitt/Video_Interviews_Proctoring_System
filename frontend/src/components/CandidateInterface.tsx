@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { VideoStreamComponent } from './VideoStreamComponent';
 import { useFaceDetection } from '../hooks/useFaceDetection';
 import { useComputerVision } from '../hooks/useComputerVision';
+import { io } from 'socket.io-client';
 import type { InterviewSession, DetectionEvent } from '../types';
 
 interface CandidateInterfaceProps {
@@ -46,7 +47,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   const [detectionEvents, setDetectionEvents] = useState<DetectionEvent[]>([]);
   const [sessionDuration, setSessionDuration] = useState(0);
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<any>(null); // Using any for Socket.IO compatibility
 
   // Computer vision hooks
   const { processFrame: processFaceFrame, isInitialized: isFaceDetectionInitialized, cleanup: cleanupFaceDetection } = useFaceDetection({
@@ -74,11 +75,15 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     sendEventToBackend(event);
     
     // Send event via WebSocket for real-time monitoring
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'detection_event',
-        data: event
-      }));
+    if (wsRef.current && wsRef.current.connected) {
+      wsRef.current.emit('detection_event', {
+        sessionId: event.sessionId,
+        eventType: event.eventType,
+        timestamp: event.timestamp,
+        duration: event.duration,
+        confidence: event.confidence,
+        metadata: event.metadata
+      });
     }
   }
 
@@ -180,31 +185,47 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   // Initialize WebSocket connection
   const initializeWebSocket = (sessionId: string) => {
     try {
-      const wsUrl = `ws://localhost:3001/ws?sessionId=${sessionId}&token=${authState.token}`;
-      const ws = new WebSocket(wsUrl);
+      // Use Socket.IO instead of raw WebSocket for consistency
+      const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000', {
+        auth: {
+          token: authState.token
+        },
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
+        forceNew: true
+      });
 
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-        wsRef.current = ws;
-      };
+      socket.on('connect', () => {
+        console.log('Socket.IO connected');
+        wsRef.current = socket as any; // Store socket reference for compatibility
+        
+        // Join session as candidate
+        socket.emit('join_session', {
+          sessionId,
+          role: 'candidate'
+        });
+      });
 
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          handleWebSocketMessage(message);
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
-      };
-
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
+      socket.on('disconnect', () => {
+        console.log('Socket.IO disconnected');
         wsRef.current = null;
-      };
+      });
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
+      socket.on('session_joined', (data) => {
+        console.log('Joined session:', data);
+      });
+
+      socket.on('session_status_update', (data) => {
+        handleWebSocketMessage({ type: 'session_status_update', data });
+      });
+
+      socket.on('interviewer_message', (data) => {
+        handleWebSocketMessage({ type: 'interviewer_message', data });
+      });
+
+      socket.on('error', (error) => {
+        console.error('Socket.IO error:', error);
+      });
 
     } catch (error) {
       console.error('Error initializing WebSocket:', error);
@@ -249,15 +270,11 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       }, 1000);
 
       // Notify backend that session has started
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'session_started',
-          data: {
-            sessionId: sessionState.session.sessionId,
-            candidateId: sessionState.session.candidateId,
-            timestamp: new Date().toISOString()
-          }
-        }));
+      if (wsRef.current && wsRef.current.connected) {
+        wsRef.current.emit('session_status_update', {
+          sessionId: sessionState.session.sessionId,
+          status: 'active'
+        });
       }
 
     } catch (error) {
@@ -287,14 +304,11 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     }));
 
     // Notify via WebSocket
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'session_paused',
-        data: {
-          sessionId: sessionState.session?.sessionId,
-          timestamp: new Date().toISOString()
-        }
-      }));
+    if (wsRef.current && wsRef.current.connected) {
+      wsRef.current.emit('session_status_update', {
+        sessionId: sessionState.session?.sessionId,
+        status: 'paused'
+      });
     }
   };
 
@@ -345,7 +359,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     }
 
     if (wsRef.current) {
-      wsRef.current.close();
+      wsRef.current.disconnect();
       wsRef.current = null;
     }
 
