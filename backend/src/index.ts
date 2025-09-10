@@ -1,10 +1,12 @@
 import express from 'express';
+import { createServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { connectToDatabase, performHealthCheck } from './utils/database';
 import { ApiResponse } from './types';
+import { WebSocketService } from './services/websocketService';
 
 // Load environment variables
 dotenv.config();
@@ -51,13 +53,14 @@ import videoRoutes from './routes/videoRoutes';
 import authRoutes from './routes/authRoutes';
 import eventRoutes from './routes/eventRoutes';
 import reportRoutes from './routes/reportRoutes';
+import sessionRoutes, { setWebSocketService } from './routes/sessionRoutes';
 
 // API routes
 app.use('/api/videos', videoRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/reports', reportRoutes);
-// app.use('/api/sessions', sessionRoutes);
+app.use('/api/sessions', sessionRoutes);
 
 // 404 handler - must come before error handling middleware
 app.use((req, res, next) => {
@@ -87,10 +90,18 @@ async function startServer() {
     console.log('Connecting to database...');
     await connectToDatabase();
     
+    // Create HTTP server
+    const server = createServer(app);
+    
+    // Initialize WebSocket service
+    const wsService = new WebSocketService(server);
+    setWebSocketService(wsService);
+    
     // Start server
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
       console.log(`Health check available at http://localhost:${PORT}/health`);
+      console.log(`WebSocket server initialized`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
