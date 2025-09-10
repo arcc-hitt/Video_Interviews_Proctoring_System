@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import type { InterviewSession } from '../../types';
 import { io, Socket } from 'socket.io-client';
 import { AlertPanel, AlertHistory } from '../alerts';
+import { ReportDashboard } from './ReportDashboard';
 import { useAlertStreaming } from '../../hooks/useAlertStreaming';
 
 interface SessionNote {
@@ -38,6 +39,7 @@ export const InterviewerDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAlertHistory, setShowAlertHistory] = useState(false);
+  const [showReportDashboard, setShowReportDashboard] = useState(false);
 
   // WebSocket and WebRTC refs
   const socketRef = useRef<Socket | null>(null);
@@ -94,7 +96,9 @@ export const InterviewerDashboard: React.FC = () => {
       auth: {
         token: authState.token
       },
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      timeout: 10000,
+      forceNew: true
     });
 
     socket.on('connect', () => {
@@ -171,24 +175,36 @@ export const InterviewerDashboard: React.FC = () => {
   const setupPeerConnection = () => {
     const pc = new RTCPeerConnection({
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ],
+      iceCandidatePoolSize: 10
     });
 
     pc.onicecandidate = (event) => {
-      if (event.candidate && selectedSession) {
+      if (event.candidate && selectedSession && connectedUsers?.candidates[0]?.userId) {
         socketRef.current?.emit('video_stream_ice_candidate', {
           sessionId: selectedSession.sessionId,
-          toUserId: connectedUsers?.candidates[0]?.userId,
+          toUserId: connectedUsers.candidates[0].userId,
           candidate: event.candidate
         });
       }
     };
 
     pc.ontrack = (event) => {
+      console.log('Received remote stream');
       if (videoRef.current) {
         videoRef.current.srcObject = event.streams[0];
+        videoRef.current.play().catch(console.error);
       }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('Peer connection state:', pc.connectionState);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', pc.iceConnectionState);
     };
 
     peerConnectionRef.current = pc;
@@ -377,6 +393,18 @@ export const InterviewerDashboard: React.FC = () => {
     );
   }
 
+  // Show report dashboard if requested
+  if (showReportDashboard && selectedSession) {
+    return (
+      <ReportDashboard
+        sessionId={selectedSession.sessionId}
+        session={selectedSession}
+        alerts={alerts}
+        onClose={() => setShowReportDashboard(false)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -393,12 +421,20 @@ export const InterviewerDashboard: React.FC = () => {
             </div>
             <div className="flex items-center space-x-4">
               {selectedSession && (
-                <button
-                  onClick={leaveSession}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                >
-                  Leave Session
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowReportDashboard(true)}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700"
+                  >
+                    View Report
+                  </button>
+                  <button
+                    onClick={leaveSession}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Leave Session
+                  </button>
+                </>
               )}
               <button
                 onClick={handleLogout}
