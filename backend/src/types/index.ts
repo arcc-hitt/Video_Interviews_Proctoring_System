@@ -10,7 +10,13 @@ export enum EventType {
   FOCUS_LOSS = 'focus-loss',
   ABSENCE = 'absence',
   MULTIPLE_FACES = 'multiple-faces',
-  UNAUTHORIZED_ITEM = 'unauthorized-item'
+  UNAUTHORIZED_ITEM = 'unauthorized-item',
+  DROWSINESS = 'drowsiness',
+  EYE_CLOSURE = 'eye-closure',
+  EXCESSIVE_BLINKING = 'excessive-blinking',
+  BACKGROUND_VOICE = 'background-voice',
+  MULTIPLE_VOICES = 'multiple-voices',
+  EXCESSIVE_NOISE = 'excessive-noise'
 }
 
 export enum SessionStatus {
@@ -63,12 +69,51 @@ export const GazeDirectionSchema = z.object({
   y: z.number().min(-1).max(1)
 });
 
+// Eye Metrics Schema
+export const EyeMetricsSchema = z.object({
+  leftEyeAR: z.number().min(0).max(1),
+  rightEyeAR: z.number().min(0).max(1),
+  averageEyeAR: z.number().min(0).max(1),
+  isEyesClosed: z.boolean(),
+  blinkDuration: z.number().min(0)
+});
+
+// Drowsiness Metrics Schema
+export const DrowsinessMetricsSchema = z.object({
+  blinkRate: z.number().min(0),
+  averageBlinkDuration: z.number().min(0),
+  longBlinkCount: z.number().int().min(0),
+  drowsinessScore: z.number().min(0).max(1),
+  isAwake: z.boolean()
+});
+
+// Speech Segment Schema
+export const SpeechSegmentSchema = z.object({
+  startTime: z.number().min(0),
+  endTime: z.number().min(0),
+  confidence: z.number().min(0).max(1),
+  isCandidateVoice: z.boolean()
+});
+
+// Audio Metrics Schema
+export const AudioMetricsSchema = z.object({
+  volume: z.number().min(0).max(1),
+  frequency: z.number().min(0),
+  voiceActivityProbability: z.number().min(0).max(1),
+  backgroundNoiseLevel: z.number().min(0).max(1),
+  speechSegments: z.array(SpeechSegmentSchema)
+});
+
 // Detection Event Metadata Schema
 export const DetectionEventMetadataSchema = z.object({
   gazeDirection: GazeDirectionSchema.optional(),
   objectType: z.nativeEnum(UnauthorizedItemType).optional(),
   boundingBox: BoundingBoxSchema.optional(),
-  faceCount: z.number().int().min(0).optional()
+  faceCount: z.number().int().min(0).optional(),
+  eyeMetrics: EyeMetricsSchema.optional(),
+  drowsinessMetrics: DrowsinessMetricsSchema.optional(),
+  audioMetrics: AudioMetricsSchema.optional(),
+  description: z.string().optional()
 });
 
 // Detection Event Schema

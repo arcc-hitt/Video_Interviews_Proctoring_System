@@ -22,6 +22,41 @@ const GazeDirectionSchema = new Schema({
   y: { type: Number, required: true, min: -1, max: 1 }
 }, { _id: false });
 
+// Eye Metrics Schema
+const EyeMetricsSchema = new Schema({
+  leftEyeAR: { type: Number, required: true, min: 0, max: 1 },
+  rightEyeAR: { type: Number, required: true, min: 0, max: 1 },
+  averageEyeAR: { type: Number, required: true, min: 0, max: 1 },
+  isEyesClosed: { type: Boolean, required: true },
+  blinkDuration: { type: Number, required: true, min: 0 }
+}, { _id: false });
+
+// Drowsiness Metrics Schema
+const DrowsinessMetricsSchema = new Schema({
+  blinkRate: { type: Number, required: true, min: 0 },
+  averageBlinkDuration: { type: Number, required: true, min: 0 },
+  longBlinkCount: { type: Number, required: true, min: 0 },
+  drowsinessScore: { type: Number, required: true, min: 0, max: 1 },
+  isAwake: { type: Boolean, required: true }
+}, { _id: false });
+
+// Speech Segment Schema
+const SpeechSegmentSchema = new Schema({
+  startTime: { type: Number, required: true, min: 0 },
+  endTime: { type: Number, required: true, min: 0 },
+  confidence: { type: Number, required: true, min: 0, max: 1 },
+  isCandidateVoice: { type: Boolean, required: true }
+}, { _id: false });
+
+// Audio Metrics Schema
+const AudioMetricsSchema = new Schema({
+  volume: { type: Number, required: true, min: 0, max: 1 },
+  frequency: { type: Number, required: true, min: 0 },
+  voiceActivityProbability: { type: Number, required: true, min: 0, max: 1 },
+  backgroundNoiseLevel: { type: Number, required: true, min: 0, max: 1 },
+  speechSegments: { type: [SpeechSegmentSchema], required: true }
+}, { _id: false });
+
 // Detection Event Metadata Schema
 const DetectionEventMetadataSchema = new Schema({
   gazeDirection: { type: GazeDirectionSchema, required: false },
@@ -31,7 +66,11 @@ const DetectionEventMetadataSchema = new Schema({
     required: false 
   },
   boundingBox: { type: BoundingBoxSchema, required: false },
-  faceCount: { type: Number, min: 0, required: false }
+  faceCount: { type: Number, min: 0, required: false },
+  eyeMetrics: { type: EyeMetricsSchema, required: false },
+  drowsinessMetrics: { type: DrowsinessMetricsSchema, required: false },
+  audioMetrics: { type: AudioMetricsSchema, required: false },
+  description: { type: String, required: false }
 }, { _id: false });
 
 // Main Detection Event Schema
