@@ -177,7 +177,8 @@ export class DetectionEventProcessingService implements EventProcessingService {
       const response = await fetch('/api/events', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getAuthToken()}`
         },
         body: JSON.stringify(apiEvent)
       });
@@ -349,11 +350,17 @@ export class DetectionEventProcessingService implements EventProcessingService {
   }
 
   /**
-   * Get authentication token (placeholder - should be injected)
+   * Get authentication token (gets from localStorage)
    */
   private getAuthToken(): string {
-    // This should be injected or retrieved from auth context
     return localStorage.getItem('auth_token') || '';
+  }
+
+  /**
+   * Check if user is authenticated
+   */
+  private isAuthenticated(): boolean {
+    return !!this.getAuthToken();
   }
 
   /**
