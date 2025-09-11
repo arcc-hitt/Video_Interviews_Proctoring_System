@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
 import type { AuthState, AuthContextType, LoginCredentials, SignupData, User } from '../types';
+import { apiService } from '../services/apiService';
 
 // Initial auth state
 const initialAuthState: AuthState = {
@@ -75,6 +76,13 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [authState, dispatch] = useReducer(authReducer, initialAuthState);
 
+  // Setup API service unauthorized handler
+  useEffect(() => {
+    apiService.setUnauthorizedHandler(() => {
+      dispatch({ type: 'AUTH_LOGOUT' });
+    });
+  }, []);
+
   // Check for existing token on mount
   useEffect(() => {
     const checkAuthStatus = () => {
@@ -107,6 +115,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     dispatch({ type: 'AUTH_START' });
 
     try {
+      console.log('Attempting login for:', credentials.email);
+      
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -116,21 +126,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       const data = await response.json();
+      console.log('Login response:', { status: response.status, data });
 
       if (!response.ok) {
-        throw new Error(data.message || 'Login failed');
+        throw new Error(data.error || data.message || 'Login failed');
       }
 
-      // Store token and user data
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('auth_user', JSON.stringify(data.user));
+      // Store token and user data (backend returns data.data.token and data.data.user)
+      localStorage.setItem('auth_token', data.data.token);
+      localStorage.setItem('auth_user', JSON.stringify(data.data.user));
+
+      console.log('Login successful, user:', data.data.user);
 
       dispatch({
         type: 'AUTH_SUCCESS',
-        payload: { user: data.user, token: data.token },
+        payload: { user: data.data.user, token: data.data.token },
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Login failed';
+      console.error('Login error:', err);
       dispatch({ type: 'AUTH_ERROR', payload: errorMessage });
       throw err;
     }
@@ -141,7 +155,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     dispatch({ type: 'AUTH_START' });
 
     try {
-      const response = await fetch('/api/auth/signup', {
+      const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -152,16 +166,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const responseData = await response.json();
 
       if (!response.ok) {
-        throw new Error(responseData.message || 'Signup failed');
+        throw new Error(responseData.error || responseData.message || 'Signup failed');
       }
 
-      // Store token and user data
-      localStorage.setItem('auth_token', responseData.token);
-      localStorage.setItem('auth_user', JSON.stringify(responseData.user));
+      // Store token and user data (backend returns data.data.token and data.data.user)
+      localStorage.setItem('auth_token', responseData.data.token);
+      localStorage.setItem('auth_user', JSON.stringify(responseData.data.user));
 
       dispatch({
         type: 'AUTH_SUCCESS',
-        payload: { user: responseData.user, token: responseData.token },
+        payload: { user: responseData.data.user, token: responseData.data.token },
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Signup failed';

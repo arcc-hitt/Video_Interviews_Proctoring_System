@@ -13,4 +13,13 @@ export default defineConfig({
       '@/lib': path.resolve(__dirname, './src/lib'),
     },
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
 })

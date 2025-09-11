@@ -226,11 +226,13 @@ export interface EventStreamConfig {
 
 // Authentication related types
 export interface User {
-  id: string;
+  userId: string;
   email: string;
   name: string;
   role: 'candidate' | 'interviewer';
   createdAt: Date;
+  isActive: boolean;
+  lastLogin?: Date;
 }
 
 export interface AuthState {
