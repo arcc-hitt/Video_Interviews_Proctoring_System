@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
+import { z } from 'zod';
 import { ValidationError } from './errorHandler';
 import { logger } from '../utils/logger';
 
@@ -35,7 +36,7 @@ export const validate = (schema: Joi.ObjectSchema, property: 'body' | 'query' | 
     });
 
     if (error) {
-      const validationErrors = error.details.map(detail => ({
+      const validationErrors = error.details.map((detail: any) => ({
         field: detail.path.join('.'),
         message: detail.message,
         value: detail.context?.value
@@ -283,15 +284,72 @@ export const reportSchemas = {
 
 // Validation error formatter
 export const formatValidationError = (error: Joi.ValidationError) => {
-  return error.details.map(detail => ({
+  return error.details.map((detail: any) => ({
     field: detail.path.join('.'),
     message: detail.message,
     value: detail.context?.value
   }));
 };
 
+// Zod validation middleware
+export const validateZod = (schema: z.ZodTypeAny, property: 'body' | 'query' | 'params' = 'body') => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const data = req[property];
+    
+    try {
+      const validatedData = schema.parse(data);
+      req[property] = validatedData;
+      next();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const validationErrors = error.issues.map((issue) => ({
+          field: issue.path.join('.'),
+          message: issue.message,
+          value: issue.path.reduce((obj, key) => obj?.[key], data)
+        }));
+
+        logger.warn('Validation Error (Zod)', {
+          errors: validationErrors,
+          url: req.url,
+          method: req.method,
+          ip: req.ip
+        });
+
+        throw new ValidationError('Validation failed');
+      }
+      throw error;
+    }
+  };
+};
+
+// Helper functions for common validation patterns (Joi)
+export const validateRequest = (schema: Joi.ObjectSchema | z.ZodTypeAny) => {
+  if ((schema as any)._def) {
+    return validateZod(schema as z.ZodTypeAny, 'body');
+  }
+  return validate(schema as Joi.ObjectSchema, 'body');
+};
+
+export const validateParams = (schema: Joi.ObjectSchema | z.ZodTypeAny) => {
+  if ((schema as any)._def) {
+    return validateZod(schema as z.ZodTypeAny, 'params');
+  }
+  return validate(schema as Joi.ObjectSchema, 'params');
+};
+
+export const validateQuery = (schema: Joi.ObjectSchema | z.ZodTypeAny) => {
+  if ((schema as any)._def) {
+    return validateZod(schema as z.ZodTypeAny, 'query');
+  }
+  return validate(schema as Joi.ObjectSchema, 'query');
+};
+
 export default {
   validate,
+  validateZod,
+  validateRequest,
+  validateParams,
+  validateQuery,
   sanitize,
   validateInputLength,
   validateFileUpload,
