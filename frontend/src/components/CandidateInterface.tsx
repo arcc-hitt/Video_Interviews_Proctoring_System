@@ -186,7 +186,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   const initializeWebSocket = (sessionId: string) => {
     try {
       // Use Socket.IO instead of raw WebSocket for consistency
-      const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000', {
+      const socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000', {
         auth: {
           token: authState.token
         },
