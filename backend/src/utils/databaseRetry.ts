@@ -81,13 +81,13 @@ export class DatabaseRetryManager {
 
         dbLogger.connection('error', {
           attempt,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
           attemptTime
         });
 
         logger.warn('Database connection attempt failed', {
           attempt,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
           attemptTime,
           uri: this.sanitizeUri(uri)
         });
@@ -96,11 +96,11 @@ export class DatabaseRetryManager {
           logger.error('Database connection failed after all retries', {
             attempts: attempt,
             totalTime: stats.totalTime,
-            lastError: error.message,
+            lastError: error instanceof Error ? error.message : String(error),
             uri: this.sanitizeUri(uri)
           });
 
-          throw new Error(`Database connection failed after ${attempt} attempts: ${error.message}`);
+          throw new Error(`Database connection failed after ${attempt} attempts: ${error instanceof Error ? error.message : String(error)}`);
         }
 
         // Calculate delay for next attempt
@@ -189,7 +189,7 @@ export class DatabaseRetryManager {
         if (!this.isRetryableError(error as Error)) {
           logger.error('Non-retryable database error', {
             operation: operationName,
-            error: error.message,
+            error: error instanceof Error ? error.message : String(error),
             context
           });
           throw error;
@@ -200,7 +200,7 @@ export class DatabaseRetryManager {
         logger.warn('Database operation failed, retrying', {
           operation: operationName,
           attempt,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
           attemptTime,
           context
         });
@@ -210,11 +210,11 @@ export class DatabaseRetryManager {
             operation: operationName,
             attempts: attempt,
             totalTime: stats.totalTime,
-            lastError: error.message,
+            lastError: error instanceof Error ? error.message : String(error),
             context
           });
 
-          throw new Error(`${operationName} failed after ${attempt} attempts: ${error.message}`);
+          throw new Error(`${operationName} failed after ${attempt} attempts: ${error instanceof Error ? error.message : String(error)}`);
         }
 
         // Calculate delay for next attempt
@@ -260,7 +260,7 @@ export class DatabaseRetryManager {
       logger.info('Database disconnected successfully');
     } catch (error) {
       logger.error('Error disconnecting from database', {
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       });
       throw error;
     }
@@ -299,7 +299,7 @@ export class DatabaseRetryManager {
     
     try {
       // Simple ping to check connection
-      await mongoose.connection.db.admin().ping();
+      await mongoose.connection.db?.admin().ping();
       const latency = Date.now() - startTime;
       
       return {
@@ -310,7 +310,7 @@ export class DatabaseRetryManager {
       return {
         healthy: false,
         latency: Date.now() - startTime,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -329,7 +329,7 @@ export const setupDatabaseGracefulShutdown = () => {
       logger.info('Database connection closed gracefully');
     } catch (error) {
       logger.error('Error closing database connection', {
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       });
     }
   };
