@@ -9,7 +9,13 @@ export enum EventType {
   FOCUS_LOSS = 'focus-loss',
   ABSENCE = 'absence',
   MULTIPLE_FACES = 'multiple-faces',
-  UNAUTHORIZED_ITEM = 'unauthorized-item'
+  UNAUTHORIZED_ITEM = 'unauthorized-item',
+  DROWSINESS = 'drowsiness',
+  EYE_CLOSURE = 'eye-closure',
+  EXCESSIVE_BLINKING = 'excessive-blinking',
+  BACKGROUND_VOICE = 'background-voice',
+  MULTIPLE_VOICES = 'multiple-voices',
+  EXCESSIVE_NOISE = 'excessive-noise'
 }
 
 export enum SessionStatus {
@@ -47,11 +53,46 @@ export interface GazeDirection {
   y: number;
 }
 
+export interface EyeMetrics {
+  leftEyeAR: number;
+  rightEyeAR: number;
+  averageEyeAR: number;
+  isEyesClosed: boolean;
+  blinkDuration: number;
+}
+
+export interface DrowsinessMetrics {
+  blinkRate: number;
+  averageBlinkDuration: number;
+  longBlinkCount: number;
+  drowsinessScore: number;
+  isAwake: boolean;
+}
+
+export interface SpeechSegment {
+  startTime: number;
+  endTime: number;
+  confidence: number;
+  isCandidateVoice: boolean;
+}
+
+export interface AudioMetrics {
+  volume: number;
+  frequency: number;
+  voiceActivityProbability: number;
+  backgroundNoiseLevel: number;
+  speechSegments: SpeechSegment[];
+}
+
 export interface DetectionEventMetadata {
   gazeDirection?: GazeDirection;
   objectType?: UnauthorizedItemType;
   boundingBox?: BoundingBox;
   faceCount?: number;
+  eyeMetrics?: EyeMetrics;
+  drowsinessMetrics?: DrowsinessMetrics;
+  audioMetrics?: AudioMetrics;
+  description?: string;
 }
 
 export interface DetectionEvent {
