@@ -192,7 +192,7 @@ export const useUserFriendlyError = () => {
         error={error}
         onRetry={handleRetry}
         onDismiss={clearError}
-        showDetails={process.env.NODE_ENV === 'development'}
+        showDetails={import.meta.env.DEV}
       />
     ) : null
   };

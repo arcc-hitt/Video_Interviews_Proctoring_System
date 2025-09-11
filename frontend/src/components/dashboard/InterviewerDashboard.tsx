@@ -92,7 +92,7 @@ export const InterviewerDashboard: React.FC = () => {
   const initializeWebSocket = useCallback(() => {
     if (!authState.token) return;
 
-    const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000', {
+    const socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000', {
       auth: {
         token: authState.token
       },

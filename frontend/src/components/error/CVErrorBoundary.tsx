@@ -64,7 +64,7 @@ export class CVErrorBoundary extends Component<CVErrorBoundaryProps, CVErrorBoun
 
     if (hasCVError) {
       // Only log in non-test environments
-      if (process.env.NODE_ENV !== 'test') {
+      if (import.meta.env.MODE !== 'test') {
         console.error('CV Error Boundary caught a computer vision error:', error, errorInfo);
       }
       
@@ -164,7 +164,7 @@ export class CVErrorBoundary extends Component<CVErrorBoundaryProps, CVErrorBoun
               <li>Memory constraints</li>
             </ul>
 
-            {process.env.NODE_ENV === 'development' && cvError && (
+            {import.meta.env.DEV && cvError && (
               <details className="cv-error-boundary__details">
                 <summary>Technical Details (Development Only)</summary>
                 <pre className="cv-error-boundary__error-stack">
