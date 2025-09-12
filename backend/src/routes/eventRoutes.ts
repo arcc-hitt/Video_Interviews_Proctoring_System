@@ -45,14 +45,37 @@ router.post('/',
       }
 
       // Check if user has permission to log events for this session
-      if (req.user!.role === UserRole.CANDIDATE && 
-          (session.candidateId !== req.user!.userId || eventData.candidateId !== req.user!.userId)) {
-        const response: ApiResponse = {
-          success: false,
-          error: 'Access denied. Cannot log events for this session.'
-        };
-        res.status(403).json(response);
-        return;
+      if (req.user!.role === UserRole.CANDIDATE) {
+        // Allow candidates to log events if:
+        // 1. Their userId matches the session's candidateId, OR
+        // 2. Their email matches the session's candidateEmail, OR
+        // 3. They are participating in the session via WebSocket (we can add this check later)
+        const userIdMatches = session.candidateId === req.user!.userId;
+        const emailMatches = session.candidateEmail && session.candidateEmail === req.user!.email;
+        const eventCandidateMatches = eventData.candidateId === req.user!.userId;
+        
+        if (!userIdMatches && !emailMatches && !eventCandidateMatches) {
+          console.log('Access denied for candidate - no matching credentials:', {
+            sessionId: eventData.sessionId,
+            userId: req.user!.userId,
+            sessionCandidateId: session.candidateId,
+            userEmail: req.user!.email,
+            sessionEmail: session.candidateEmail
+          });
+          const response: ApiResponse = {
+            success: false,
+            error: 'Access denied. Cannot log events for this session.'
+          };
+          res.status(403).json(response);
+          return;
+        }
+        
+        // If the candidate is authorized but the event candidateId doesn't match,
+        // update the event candidateId to match the authenticated user
+        if (eventData.candidateId !== req.user!.userId) {
+          console.log('Updating event candidateId from', eventData.candidateId, 'to', req.user!.userId);
+          eventData.candidateId = req.user!.userId;
+        }
       }
 
       // Create the detection event
@@ -62,6 +85,12 @@ router.post('/',
       });
 
       await detectionEvent.save();
+
+      console.log('Detection event saved successfully:', {
+        sessionId: eventData.sessionId,
+        eventType: eventData.eventType,
+        candidateId: eventData.candidateId
+      });
 
       const response: ApiResponse<any> = {
         success: true,

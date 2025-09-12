@@ -305,14 +305,21 @@ export const validateZod = (schema: z.ZodTypeAny, property: 'body' | 'query' | '
         const validationErrors = error.issues.map((issue) => ({
           field: issue.path.join('.'),
           message: issue.message,
-          value: issue.path.reduce((obj, key) => obj?.[key], data)
+          value: issue.path.reduce((obj, key) => obj?.[key], data),
+          code: issue.code
         }));
 
         logger.warn('Validation Error (Zod)', {
           errors: validationErrors,
           url: req.url,
           method: req.method,
-          ip: req.ip
+          ip: req.ip,
+          body: JSON.stringify(data, null, 2)
+        });
+
+        console.log('Zod Validation Error Details:', {
+          errors: validationErrors,
+          requestBody: data
         });
 
         throw new ValidationError('Validation failed');

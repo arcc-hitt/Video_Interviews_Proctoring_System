@@ -41,20 +41,49 @@ router.post('/create', authenticate, async (req, res): Promise<void> => {
       return;
     }
 
-    // Generate unique IDs
+    // Generate unique session ID
     const sessionId = uuidv4();
-    const candidateId = uuidv4();
+    
+    // Try to find existing candidate user by email, or generate a new candidateId
+    let candidateId = uuidv4(); // Default to new UUID
+    
+    // Import User model to check for existing candidate
+    const { User } = await import('../models');
+    
+    let candidateUser = null;
+    if (candidateEmail) {
+      candidateUser = await User.findOne({ 
+        email: candidateEmail.toLowerCase(),
+        role: UserRole.CANDIDATE 
+      });
+    }
+    
+    if (candidateUser) {
+      candidateId = candidateUser.userId;
+      console.log('Found existing candidate user:', candidateUser.email, 'with ID:', candidateId);
+    } else {
+      console.log('No existing candidate found for email:', candidateEmail, 'using generated ID:', candidateId);
+    }
 
     // Create new session
     const session = new InterviewSession({
       sessionId,
       candidateId,
       candidateName,
+      candidateEmail,
       startTime: new Date(),
       status: SessionStatus.ACTIVE
     });
 
     await session.save();
+    
+    console.log('Session created:', { 
+      sessionId, 
+      candidateId, 
+      candidateName, 
+      candidateEmail,
+      hasExistingUser: !!candidateUser 
+    });
 
     const response: ApiResponse = {
       success: true,
@@ -119,6 +148,88 @@ router.get('/:sessionId', authenticate, async (req, res): Promise<void> => {
       success: false,
       error: 'Internal server error',
       message: 'Failed to fetch session'
+    };
+    res.status(500).json(response);
+  }
+});
+
+// Join session as candidate
+router.post('/:sessionId/join', authenticate, async (req, res): Promise<void> => {
+  try {
+    const { sessionId } = req.params;
+    
+    // Only candidates can join sessions
+    if (req.user?.role !== UserRole.CANDIDATE) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Forbidden',
+        message: 'Only candidates can join sessions'
+      };
+      res.status(403).json(response);
+      return;
+    }
+
+    const session = await InterviewSession.findOne({ sessionId });
+    if (!session) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Not found',
+        message: 'Session not found'
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    // Check if session is active
+    if (session.status !== SessionStatus.ACTIVE) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Session not active',
+        message: 'Session is not active'
+      };
+      res.status(400).json(response);
+      return;
+    }
+
+    // Update candidateId to match the authenticated user
+    // This ensures that the user can post events to this session
+    const previousCandidateId = session.candidateId;
+    session.candidateId = req.user.userId;
+    await session.save();
+    
+    console.log('Candidate joined session:', {
+      sessionId,
+      previousCandidateId,
+      newCandidateId: req.user.userId,
+      candidateEmail: req.user.email
+    });
+
+    // Broadcast that candidate joined via WebSocket
+    if (wsService && sessionId) {
+      wsService.broadcastToSession(sessionId, 'candidate_joined', {
+        sessionId,
+        candidateId: req.user.userId,
+        candidateName: req.user.name,
+        candidateEmail: req.user.email,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        ...session.toJSON(),
+        message: 'Successfully joined session'
+      }
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error joining session:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: 'Internal server error',
+      message: 'Failed to join session'
     };
     res.status(500).json(response);
   }

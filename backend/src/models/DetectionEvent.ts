@@ -70,8 +70,16 @@ const DetectionEventMetadataSchema = new Schema({
   eyeMetrics: { type: EyeMetricsSchema, required: false },
   drowsinessMetrics: { type: DrowsinessMetricsSchema, required: false },
   audioMetrics: { type: AudioMetricsSchema, required: false },
-  description: { type: String, required: false }
-}, { _id: false });
+  description: { type: String, required: false },
+  // Allow additional fields for flexibility
+  eventSource: { type: String, required: false },
+  source: { type: String, required: false },
+  processingTime: { type: Number, required: false },
+  originalEventType: { type: String, required: false }
+}, { 
+  _id: false,
+  strict: false // Allow additional fields not defined in schema
+});
 
 // Main Detection Event Schema
 const DetectionEventSchema = new Schema<DetectionEventDocument>({

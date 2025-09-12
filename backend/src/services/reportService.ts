@@ -364,23 +364,34 @@ export class ReportService {
             unauthorizedItems: 0
         };
 
+        console.log(`Calculating event counts for ${events.length} events`);
+
         events.forEach(event => {
             switch (event.eventType) {
                 case EventType.FOCUS_LOSS:
+                case 'focus-loss':
                     counts.focusLoss++;
                     break;
                 case EventType.ABSENCE:
+                case 'absence':
                     counts.absence++;
                     break;
                 case EventType.MULTIPLE_FACES:
+                case 'multiple-faces':
                     counts.multipleFaces++;
                     break;
                 case EventType.UNAUTHORIZED_ITEM:
+                case 'unauthorized-item':
                     counts.unauthorizedItems++;
+                    break;
+                default:
+                    // Log unknown event types for debugging
+                    console.log(`Unknown event type encountered: ${event.eventType}`);
                     break;
             }
         });
 
+        console.log('Event counts calculated:', counts);
         return counts;
     }
 

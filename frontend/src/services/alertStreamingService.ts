@@ -36,6 +36,10 @@ export class AlertStreamingService {
   private maxReconnectAttempts: number;
   private reconnectDelay: number;
   private isConnected = false;
+  private isConnecting = false;
+  private isDestroyed = false;
+  private currentSessionId: string | null = null;
+  private joinSessionTimeout: NodeJS.Timeout | null = null;
 
   constructor(config: AlertStreamingConfig, callbacks: AlertStreamingCallbacks = {}) {
     this.config = config;
@@ -50,25 +54,81 @@ export class AlertStreamingService {
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        // Prevent connection conflicts
+        if (this.isConnected || this.isConnecting || this.isDestroyed) {
+          console.log('[AlertStreaming] 🚫 Connection prevented:', {
+            isConnected: this.isConnected,
+            isConnecting: this.isConnecting,
+            isDestroyed: this.isDestroyed
+          });
+          if (this.isConnected) {
+            resolve();
+          } else {
+            reject(new Error('Connection already in progress or service destroyed'));
+          }
+          return;
+        }
+
+        this.isConnecting = true;
+
+        // Get token from localStorage if not provided in config
+        const token = this.config.authToken || localStorage.getItem('token');
+        
+        if (!token) {
+          this.isConnecting = false;
+          console.error('[AlertStreaming] ❌ No authentication token available');
+          reject(new Error('Authentication token is required'));
+          return;
+        }
+
+        console.log('[AlertStreaming] 🔐 Connecting with token:', token ? '***has_token***' : 'missing');
+
+        // Disconnect existing socket if any
+        if (this.socket) {
+          console.log('[AlertStreaming] 🔌 Cleaning up existing socket');
+          this.socket.removeAllListeners();
+          this.socket.disconnect();
+          this.socket = null;
+        }
+
         this.socket = io(this.config.backendUrl, {
           auth: {
-            token: this.config.authToken
+            token: token
+          },
+          extraHeaders: {
+            'Authorization': `Bearer ${token}`
           },
           transports: ['websocket', 'polling'],
-          timeout: 10000,
-          forceNew: true
+          timeout: 15000, // Increased timeout
+          forceNew: false,
+          autoConnect: true,
+          reconnection: false // We handle reconnection manually
         });
 
         this.setupEventListeners();
 
+        // Set up connection promise resolution
+        const connectionTimeout = setTimeout(() => {
+          this.isConnecting = false;
+          reject(new Error('Connection timeout'));
+        }, 15000);
+
         this.socket.on('connect', () => {
-          console.log('Alert streaming service connected');
+          clearTimeout(connectionTimeout);
+          console.log('[AlertStreaming] ✅ Alert streaming service connected');
+          console.log('[AlertStreaming] 📡 Socket object:', this.socket?.id, 'connected:', this.socket?.connected);
           this.isConnected = true;
+          this.isConnecting = false;
           this.reconnectAttempts = 0;
           
           // Join session if sessionId is provided
           if (this.config.sessionId) {
-            this.joinSession(this.config.sessionId);
+            console.log('[AlertStreaming] 🔄 Auto-joining session:', this.config.sessionId);
+            this.joinSessionTimeout = setTimeout(() => {
+              if (this.isConnected && !this.isDestroyed) {
+                this.joinSession(this.config.sessionId!);
+              }
+            }, 200); // Increased delay for stability
           }
           
           if (this.callbacks.onConnect) {
@@ -79,8 +139,14 @@ export class AlertStreamingService {
         });
 
         this.socket.on('connect_error', (error) => {
-          console.error('Alert streaming connection error:', error);
-          this.isConnected = false;
+          clearTimeout(connectionTimeout);
+          this.isConnecting = false;
+          console.error('[AlertStreaming] ❌ Connection error:', error);
+          console.error('[AlertStreaming] Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+          });
           
           if (this.callbacks.onError) {
             this.callbacks.onError(new Error(`Connection failed: ${error.message}`));
@@ -89,7 +155,19 @@ export class AlertStreamingService {
           reject(error);
         });
 
+        this.socket.on('disconnect', (reason) => {
+          console.log('[AlertStreaming] 🔌 Socket disconnected:', reason);
+          this.isConnected = false;
+          this.isConnecting = false;
+          
+          if (this.callbacks.onDisconnect) {
+            this.callbacks.onDisconnect();
+          }
+        });
+
       } catch (error) {
+        this.isConnecting = false;
+        console.error('[AlertStreaming] ❌ Connect method error:', error);
         reject(error);
       }
     });
@@ -104,6 +182,12 @@ export class AlertStreamingService {
     // Connection events
     this.socket.on('disconnect', (reason) => {
       console.log('Alert streaming service disconnected:', reason);
+      console.log('Disconnect details:', {
+        reason,
+        wasConnected: this.isConnected,
+        sessionId: this.config.sessionId,
+        socketConnected: this.socket?.connected
+      });
       this.isConnected = false;
       
       if (this.callbacks.onDisconnect) {
@@ -111,14 +195,52 @@ export class AlertStreamingService {
       }
       
       // Attempt reconnection for certain disconnect reasons
-      if (reason === 'io server disconnect' || reason === 'transport close') {
+      if (reason === 'io server disconnect' || reason === 'transport close' || reason === 'transport error') {
+        console.log('Attempting reconnect due to:', reason);
         this.attemptReconnect();
+      }
+    });
+
+    // Direct alerts from backend (processed alerts with payloads)
+    this.socket.on('alert', (alert: any) => {
+      console.log('[AlertStreaming] 📥 Received alert from backend:', alert);
+      console.log('[AlertStreaming] 📥 Alert details:', {
+        id: alert.id,
+        type: alert.type,
+        eventType: alert.eventType,
+        message: alert.message,
+        timestamp: alert.timestamp,
+        severity: alert.severity,
+        confidence: alert.confidence,
+        sessionId: alert.sessionId,
+        candidateId: alert.candidateId
+      });
+      
+      // Convert backend alert format to frontend Alert interface
+      const frontendAlert: Alert = {
+        id: alert.id || `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type: alert.type || alert.eventType,
+        message: alert.message,
+        timestamp: new Date(alert.timestamp),
+        severity: alert.severity,
+        confidence: alert.confidence,
+        metadata: alert.metadata
+      };
+      
+      console.log('[AlertStreaming] 📥 Converted frontend alert:', frontendAlert);
+      console.log('[AlertStreaming] 📥 Callback available:', !!this.callbacks.onAlert);
+      
+      if (this.callbacks.onAlert) {
+        console.log('[AlertStreaming] 📥 Calling onAlert callback with:', frontendAlert);
+        this.callbacks.onAlert(frontendAlert);
+      } else {
+        console.warn('[AlertStreaming] 📥 No onAlert callback registered!');
       }
     });
 
     // Detection event from candidate
     this.socket.on('detection_event_broadcast', (event: DetectionEvent) => {
-      console.log('Received detection event:', event);
+      console.log('[AlertStreaming] 📥 Received detection event broadcast:', event);
       
       const alert = this.convertDetectionEventToAlert(event);
       
@@ -155,6 +277,26 @@ export class AlertStreamingService {
     this.socket.on('session_status_update', (data: any) => {
       console.log('Session status update:', data);
       // Handle session status changes if needed
+    });
+
+    // Session joined confirmation
+    this.socket.on('session_joined', (data: any) => {
+      console.log('[AlertStreaming] ✅ Session joined confirmation:', data);
+      console.log('[AlertStreaming] Session details:', {
+        sessionId: data.sessionId,
+        role: data.role,
+        userId: data.userId,
+        connectedUsers: data.connectedUsers,
+        interviewerCount: data.connectedUsers?.interviewers?.length || 0
+      });
+    });
+
+    // Session join error
+    this.socket.on('session_join_error', (error: any) => {
+      console.error('[AlertStreaming] ❌ Session join error:', error);
+      if (this.callbacks.onError) {
+        this.callbacks.onError(new Error(`Session join error: ${error.message || error}`));
+      }
     });
 
     // Error handling
@@ -198,17 +340,56 @@ export class AlertStreamingService {
    */
   joinSession(sessionId: string): void {
     if (!this.socket || !this.isConnected) {
-      console.warn('Cannot join session: not connected');
+      console.warn('[AlertStreaming] Cannot join session: not connected', {
+        hasSocket: !!this.socket,
+        isConnected: this.isConnected,
+        socketConnected: this.socket?.connected
+      });
       return;
     }
 
-    this.config.sessionId = sessionId;
-    this.socket.emit('join_session', {
-      sessionId,
-      role: 'interviewer'
-    });
+    // Prevent duplicate session joins
+    if (this.currentSessionId === sessionId) {
+      console.log('[AlertStreaming] 🔄 Already joined session:', sessionId);
+      return;
+    }
 
-    console.log(`Joined session: ${sessionId}`);
+    this.currentSessionId = sessionId;
+    this.config.sessionId = sessionId;
+    
+    // Get authentication token and user info from localStorage
+    const token = localStorage.getItem('token');
+    const userStr = localStorage.getItem('user');
+    let userId = 'interviewer-default';
+    
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        userId = user.userId || user.id || userId;
+      } catch (e) {
+        console.warn('[AlertStreaming] Failed to parse user data from localStorage');
+      }
+    }
+    
+    const joinPayload = {
+      sessionId,
+      role: 'interviewer',
+      userId,
+      token
+    };
+    
+    console.log('[AlertStreaming] 📤 Emitting join_session event with full payload:', {
+      sessionId,
+      role: 'interviewer',
+      userId,
+      hasToken: !!token,
+      socketId: this.socket.id,
+      socketConnected: this.socket.connected
+    });
+    
+    this.socket.emit('join_session', joinPayload);
+
+    console.log(`[AlertStreaming] ✅ Successfully emitted join session: ${sessionId} as interviewer`);
   }
 
   /**
@@ -325,19 +506,38 @@ export class AlertStreamingService {
    * Disconnect from WebSocket server
    */
   disconnect(): void {
+    console.log('[AlertStreaming] 🔌 Disconnecting from alert stream');
+    
+    // Clear any pending session join timeout
+    if (this.joinSessionTimeout) {
+      clearTimeout(this.joinSessionTimeout);
+      this.joinSessionTimeout = null;
+    }
+    
     if (this.socket) {
+      this.socket.removeAllListeners(); // Clean up all listeners
       this.socket.disconnect();
       this.socket = null;
     }
     this.isConnected = false;
+    this.isConnecting = false;
+    this.currentSessionId = null;
     this.reconnectAttempts = 0;
-    console.log('Alert streaming service disconnected');
+    console.log('[AlertStreaming] ❌ Alert streaming service disconnected');
   }
 
   /**
    * Clean up resources
    */
   destroy(): void {
+    this.isDestroyed = true;
+    
+    // Clear any pending timeouts
+    if (this.joinSessionTimeout) {
+      clearTimeout(this.joinSessionTimeout);
+      this.joinSessionTimeout = null;
+    }
+    
     this.disconnect();
     this.callbacks = {};
   }

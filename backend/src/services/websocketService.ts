@@ -15,11 +15,14 @@ import {
   VideoStreamAnswerPayload,
   VideoStreamIceCandidatePayload,
   SessionStatusUpdatePayload,
+  InterviewerSessionControlPayload,
+  InterviewerRecordingControlPayload,
+  SessionControlUpdatePayload,
   WebSocketErrorPayload,
   ActiveSession,
   WebSocketStats
 } from '../types/websocket';
-import { JWTPayload } from '../types';
+import { JWTPayload, UserRole } from '../types';
 import { InterviewSession } from '../models/InterviewSession';
 
 export class WebSocketService {
@@ -27,6 +30,7 @@ export class WebSocketService {
   private activeSessions: Map<string, ActiveSession> = new Map();
   private userSockets: Map<string, Socket> = new Map();
   private startTime: Date = new Date();
+  private heartbeatInterval: NodeJS.Timeout | null = null;
 
   constructor(server: HTTPServer) {
     this.io = new SocketIOServer(server, {
@@ -35,11 +39,26 @@ export class WebSocketService {
         methods: ["GET", "POST"],
         credentials: true
       },
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      pingTimeout: 60000,
+      pingInterval: 25000,
+      upgradeTimeout: 30000,
+      allowEIO3: true
     });
 
     this.setupMiddleware();
     this.setupEventHandlers();
+    this.startHeartbeat();
+  }
+
+  private startHeartbeat(): void {
+    // Send heartbeat to all connected clients every 30 seconds
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+    this.heartbeatInterval = setInterval(() => {
+      this.io.emit('heartbeat', { timestamp: new Date(), serverUptime: Date.now() - this.startTime.getTime() });
+    }, 30000);
   }
 
   private setupMiddleware(): void {
@@ -63,7 +82,13 @@ export class WebSocketService {
 
   private setupEventHandlers(): void {
     this.io.on('connection', (socket: Socket) => {
-      console.log(`User connected: ${socket.data.user.userId}`);
+      console.log(`[WebSocket] ✅ User connected: ${socket.data.user.userId}`);
+      console.log(`[WebSocket] Connection details:`, {
+        socketId: socket.id,
+        userId: socket.data.user.userId,
+        email: socket.data.user.email,
+        role: socket.data.user.role
+      });
       this.userSockets.set(socket.data.user.userId, socket);
 
       // Handle session joining
@@ -117,13 +142,29 @@ export class WebSocketService {
         this.handleSessionStatusUpdate(socket, payload);
       });
 
+      // Handle interviewer session control
+      socket.on(WebSocketEventType.INTERVIEWER_SESSION_CONTROL, (payload: InterviewerSessionControlPayload) => {
+        this.handleInterviewerSessionControl(socket, payload);
+      });
+
+      // Handle interviewer recording control
+      socket.on(WebSocketEventType.INTERVIEWER_RECORDING_CONTROL, (payload: InterviewerRecordingControlPayload) => {
+        this.handleInterviewerRecordingControl(socket, payload);
+      });
+
       // Handle heartbeat
       socket.on(WebSocketEventType.PING, () => {
         socket.emit(WebSocketEventType.PONG);
       });
 
       // Handle disconnection
-      socket.on('disconnect', () => {
+      socket.on('disconnect', (reason) => {
+        console.log(`[WebSocket] ❌ User disconnected: ${socket.data.user.userId}, reason: ${reason}`);
+        console.log(`[WebSocket] Disconnect details:`, {
+          socketId: socket.id,
+          userId: socket.data.user.userId,
+          reason
+        });
         this.handleDisconnect(socket);
       });
     });
@@ -131,6 +172,13 @@ export class WebSocketService {
 
   private async handleJoinSession(socket: Socket, payload: JoinSessionPayload): Promise<void> {
     try {
+      console.log(`[WebSocket] 🚪 JOIN_SESSION request:`, {
+        userId: socket.data.user.userId,
+        requestedSessionId: payload.sessionId,
+        requestedRole: payload.role,
+        payloadUserId: payload.userId
+      });
+      
       const { sessionId, role } = payload;
       const userId = socket.data.user.userId;
 
@@ -142,9 +190,19 @@ export class WebSocketService {
       }
 
       // Validate user role and permissions
-      if (role === WebSocketUserRole.CANDIDATE && session.candidateId !== userId) {
-        this.emitError(socket, 'UNAUTHORIZED', 'Not authorized to join as candidate');
-        return;
+      if (role === WebSocketUserRole.CANDIDATE) {
+        // For candidates, check if they have the candidate role
+        // We allow any candidate to join since sessions are created with generated candidateIds
+        if (socket.data.user.role !== UserRole.CANDIDATE) {
+          this.emitError(socket, 'UNAUTHORIZED', 'Not authorized to join as candidate');
+          return;
+        }
+      } else if (role === WebSocketUserRole.INTERVIEWER) {
+        // For interviewers, check if they have the interviewer role
+        if (socket.data.user.role !== UserRole.INTERVIEWER && socket.data.user.role !== UserRole.ADMIN) {
+          this.emitError(socket, 'UNAUTHORIZED', 'Not authorized to join as interviewer');
+          return;
+        }
       }
 
       // Join socket room
@@ -240,17 +298,109 @@ export class WebSocketService {
     }
   }
 
-  private handleDetectionEvent(socket: Socket, payload: DetectionEventPayload): void {
+  private async handleDetectionEvent(socket: Socket, payload: DetectionEventPayload): Promise<void> {
     try {
-      const { sessionId } = payload;
+      const { sessionId, eventType, candidateId, timestamp, confidence, metadata } = payload;
       
-      // Broadcast to interviewers in the session
+      console.log(`[WebSocket] Detection event received from ${socket.data.user.userId}:`, {
+        sessionId,
+        eventType,
+        candidateId,
+        confidence
+      });
+      
+      // Validate session exists
+      const activeSession = this.activeSessions.get(sessionId);
+      if (!activeSession) {
+        console.error(`[WebSocket] Session ${sessionId} not found in active sessions`);
+        this.emitError(socket, 'SESSION_NOT_FOUND', 'Session not found');
+        return;
+      }
+
+      console.log(`[WebSocket] Session ${sessionId} has ${activeSession.interviewers.size} interviewers connected`);
+
+      // Create enhanced alert payload for interviewers
+      const alertPayload = {
+        id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        sessionId,
+        candidateId,
+        eventType,
+        timestamp: typeof timestamp === 'string' ? new Date(timestamp) : timestamp,
+        confidence: confidence || 0.8,
+        metadata: {
+          ...metadata,
+          source: 'real-time-detection',
+          sessionActive: true
+        },
+        message: this.getEventMessage(eventType, metadata),
+        severity: this.getEventSeverity(eventType),
+        type: eventType
+      };
+
+      console.log(`[WebSocket] Created alert payload:`, alertPayload);
+
+      // Broadcast detection event to all users in session
       socket.to(sessionId).emit(WebSocketEventType.DETECTION_EVENT_BROADCAST, payload);
       
-      console.log(`Detection event broadcasted for session ${sessionId}:`, payload.eventType);
+      // Send formatted alert specifically to interviewers
+      let alertsSent = 0;
+      activeSession.interviewers.forEach((interviewer, interviewerId) => {
+        const interviewerSocket = this.userSockets.get(interviewerId);
+        if (interviewerSocket) {
+          console.log(`[WebSocket] Sending alert to interviewer ${interviewerId}`);
+          interviewerSocket.emit('alert', alertPayload);
+          alertsSent++;
+        } else {
+          console.warn(`[WebSocket] Interviewer ${interviewerId} socket not found`);
+        }
+      });
+      
+      console.log(`[WebSocket] Sent alerts to ${alertsSent} interviewers for session ${sessionId}`);
+      
+      // Update session activity
+      activeSession.lastActivity = new Date();
+      
+      console.log(`[WebSocket] Detection event processed successfully for session ${sessionId}:`, eventType);
     } catch (error) {
-      console.error('Error handling detection event:', error);
-      this.emitError(socket, 'DETECTION_EVENT_ERROR', 'Failed to broadcast detection event');
+      console.error('[WebSocket] Error handling detection event:', error);
+      this.emitError(socket, 'DETECTION_EVENT_ERROR', 'Failed to process detection event');
+    }
+  }
+
+  private getEventMessage(eventType: string, metadata?: any): string {
+    switch (eventType) {
+      case 'focus-loss':
+        if (metadata?.gazeDirection) {
+          const { x, y } = metadata.gazeDirection;
+          const direction = Math.abs(x) > Math.abs(y) ? 
+            (x > 0 ? 'right' : 'left') : 
+            (y > 0 ? 'down' : 'up');
+          return `Candidate looked away (${direction})`;
+        }
+        return 'Candidate looked away from screen';
+      case 'absence':
+        return 'No face detected - candidate may have left';
+      case 'multiple-faces':
+        const faceCount = metadata?.faceCount || 'multiple';
+        return `Multiple faces detected (${faceCount} faces)`;
+      case 'unauthorized-item':
+        const itemType = metadata?.itemType || 'unknown item';
+        return `Unauthorized item detected: ${itemType}`;
+      default:
+        return `Detection event: ${eventType}`;
+    }
+  }
+
+  private getEventSeverity(eventType: string): 'low' | 'medium' | 'high' {
+    switch (eventType) {
+      case 'focus-loss':
+        return 'medium';
+      case 'absence':
+      case 'multiple-faces':
+      case 'unauthorized-item':
+        return 'high';
+      default:
+        return 'low';
     }
   }
 
@@ -323,11 +473,31 @@ export class WebSocketService {
 
   private handleVideoStreamOffer(socket: Socket, payload: VideoStreamOfferPayload): void {
     try {
-      const { toUserId } = payload;
-      const targetSocket = this.userSockets.get(toUserId);
+      const { sessionId, toUserId } = payload;
       
-      if (targetSocket) {
-        targetSocket.emit(WebSocketEventType.VIDEO_STREAM_OFFER, payload);
+      // If toUserId is 'interviewer', broadcast to all interviewers in the session
+      if (toUserId === 'interviewer') {
+        const activeSession = this.activeSessions.get(sessionId);
+        if (activeSession) {
+          activeSession.interviewers.forEach((interviewer) => {
+            const interviewerSocket = this.userSockets.get(interviewer.userId);
+            if (interviewerSocket) {
+              interviewerSocket.emit(WebSocketEventType.VIDEO_STREAM_OFFER, {
+                ...payload,
+                fromUserId: socket.data.user.userId
+              });
+            }
+          });
+        }
+      } else {
+        // Direct message to specific user
+        const targetSocket = this.userSockets.get(toUserId);
+        if (targetSocket) {
+          targetSocket.emit(WebSocketEventType.VIDEO_STREAM_OFFER, {
+            ...payload,
+            fromUserId: socket.data.user.userId
+          });
+        }
       }
     } catch (error) {
       console.error('Error handling video stream offer:', error);
@@ -340,7 +510,10 @@ export class WebSocketService {
       const targetSocket = this.userSockets.get(toUserId);
       
       if (targetSocket) {
-        targetSocket.emit(WebSocketEventType.VIDEO_STREAM_ANSWER, payload);
+        targetSocket.emit(WebSocketEventType.VIDEO_STREAM_ANSWER, {
+          ...payload,
+          fromUserId: socket.data.user.userId
+        });
       }
     } catch (error) {
       console.error('Error handling video stream answer:', error);
@@ -349,11 +522,31 @@ export class WebSocketService {
 
   private handleVideoStreamIceCandidate(socket: Socket, payload: VideoStreamIceCandidatePayload): void {
     try {
-      const { toUserId } = payload;
-      const targetSocket = this.userSockets.get(toUserId);
+      const { sessionId, toUserId } = payload;
       
-      if (targetSocket) {
-        targetSocket.emit(WebSocketEventType.VIDEO_STREAM_ICE_CANDIDATE, payload);
+      // If toUserId is 'interviewer', broadcast to all interviewers in the session
+      if (toUserId === 'interviewer') {
+        const activeSession = this.activeSessions.get(sessionId);
+        if (activeSession) {
+          activeSession.interviewers.forEach((interviewer) => {
+            const interviewerSocket = this.userSockets.get(interviewer.userId);
+            if (interviewerSocket) {
+              interviewerSocket.emit(WebSocketEventType.VIDEO_STREAM_ICE_CANDIDATE, {
+                ...payload,
+                fromUserId: socket.data.user.userId
+              });
+            }
+          });
+        }
+      } else {
+        // Direct message to specific user
+        const targetSocket = this.userSockets.get(toUserId);
+        if (targetSocket) {
+          targetSocket.emit(WebSocketEventType.VIDEO_STREAM_ICE_CANDIDATE, {
+            ...payload,
+            fromUserId: socket.data.user.userId
+          });
+        }
       }
     } catch (error) {
       console.error('Error handling video stream ICE candidate:', error);
@@ -381,6 +574,101 @@ export class WebSocketService {
     } catch (error) {
       console.error('Error handling session status update:', error);
       this.emitError(socket, 'SESSION_UPDATE_ERROR', 'Failed to update session status');
+    }
+  }
+
+  private handleInterviewerSessionControl(socket: Socket, payload: InterviewerSessionControlPayload): void {
+    try {
+      const { sessionId, action } = payload;
+      const userId = socket.data.user.userId;
+      
+      // Verify the user is an interviewer in this session
+      const sessionData = this.activeSessions.get(sessionId);
+      if (!sessionData || !sessionData.interviewers.has(userId)) {
+        this.emitError(socket, 'UNAUTHORIZED', 'Only interviewers can control sessions');
+        return;
+      }
+
+      // Map actions to control types
+      let controlType: string;
+      switch (action) {
+        case 'start':
+          controlType = 'session_started';
+          break;
+        case 'pause':
+          controlType = 'session_paused';
+          break;
+        case 'resume':
+          controlType = 'session_resumed';
+          break;
+        case 'end':
+          controlType = 'session_ended';
+          break;
+        case 'terminate':
+          controlType = 'session_terminated';
+          break;
+        default:
+          this.emitError(socket, 'INVALID_ACTION', 'Invalid session control action');
+          return;
+      }
+
+      // Broadcast control update to all session participants
+      const controlUpdate: SessionControlUpdatePayload = {
+        sessionId,
+        type: controlType as any,
+        timestamp: new Date().toISOString()
+      };
+
+      this.io.to(sessionId).emit(WebSocketEventType.SESSION_CONTROL_UPDATE, controlUpdate);
+      
+      console.log(`Session control: ${action} for session ${sessionId} by interviewer ${userId}`);
+
+    } catch (error) {
+      console.error('Error handling interviewer session control:', error);
+      this.emitError(socket, 'INTERNAL_ERROR', 'Failed to process session control');
+    }
+  }
+
+  private handleInterviewerRecordingControl(socket: Socket, payload: InterviewerRecordingControlPayload): void {
+    try {
+      const { sessionId, action } = payload;
+      const userId = socket.data.user.userId;
+      
+      // Verify the user is an interviewer in this session
+      const sessionData = this.activeSessions.get(sessionId);
+      if (!sessionData || !sessionData.interviewers.has(userId)) {
+        this.emitError(socket, 'UNAUTHORIZED', 'Only interviewers can control recording');
+        return;
+      }
+
+      // Map actions to control types
+      let controlType: string;
+      switch (action) {
+        case 'start_recording':
+          controlType = 'recording_started';
+          break;
+        case 'stop_recording':
+          controlType = 'recording_stopped';
+          break;
+        default:
+          this.emitError(socket, 'INVALID_ACTION', 'Invalid recording control action');
+          return;
+      }
+
+      // Broadcast recording control update to all session participants
+      const controlUpdate: SessionControlUpdatePayload = {
+        sessionId,
+        type: controlType as any,
+        timestamp: new Date().toISOString()
+      };
+
+      this.io.to(sessionId).emit(WebSocketEventType.SESSION_CONTROL_UPDATE, controlUpdate);
+      
+      console.log(`Recording control: ${action} for session ${sessionId} by interviewer ${userId}`);
+
+    } catch (error) {
+      console.error('Error handling interviewer recording control:', error);
+      this.emitError(socket, 'INTERNAL_ERROR', 'Failed to process recording control');
     }
   }
 

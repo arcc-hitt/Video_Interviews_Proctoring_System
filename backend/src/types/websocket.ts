@@ -31,6 +31,11 @@ export enum WebSocketEventType {
   // Session status updates
   SESSION_STATUS_UPDATE = 'session_status_update',
   
+  // Interviewer session control
+  INTERVIEWER_SESSION_CONTROL = 'interviewer_session_control',
+  INTERVIEWER_RECORDING_CONTROL = 'interviewer_recording_control',
+  SESSION_CONTROL_UPDATE = 'session_control_update',
+  
   // Error handling
   ERROR = 'error',
   
@@ -142,6 +147,27 @@ export interface SessionStatusUpdatePayload {
   sessionId: string;
   status: 'active' | 'completed' | 'terminated';
   updatedBy: string;
+  timestamp: string;
+}
+
+// Interviewer session control payload
+export interface InterviewerSessionControlPayload {
+  sessionId: string;
+  action: 'start' | 'pause' | 'resume' | 'end' | 'terminate';
+  timestamp: string;
+}
+
+// Interviewer recording control payload
+export interface InterviewerRecordingControlPayload {
+  sessionId: string;
+  action: 'start_recording' | 'stop_recording';
+  timestamp: string;
+}
+
+// Session control update payload (broadcast to candidates)
+export interface SessionControlUpdatePayload {
+  sessionId: string;
+  type: 'session_started' | 'session_paused' | 'session_resumed' | 'session_ended' | 'session_terminated' | 'recording_started' | 'recording_stopped';
   timestamp: string;
 }
 

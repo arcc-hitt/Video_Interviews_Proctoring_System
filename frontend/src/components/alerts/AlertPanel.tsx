@@ -35,24 +35,59 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
 
   // Convert alerts to enhanced alerts with IDs
   useEffect(() => {
-    const newEnhancedAlerts = alerts.map((alert, index) => ({
-      ...alert,
-      id: `alert-${Date.now()}-${index}`,
-      acknowledged: false
-    }));
+    // Safety check for alerts prop
+    if (!Array.isArray(alerts)) {
+      console.warn('AlertPanel: alerts prop is not an array:', alerts);
+      setEnhancedAlerts([]);
+      return;
+    }
+
+    const newEnhancedAlerts = alerts
+      .filter(alert => alert && typeof alert === 'object') // Filter out invalid alerts
+      .map((alert, index) => {
+        try {
+          return {
+            ...alert,
+            id: alert.id || `alert-${alert.timestamp instanceof Date ? alert.timestamp.getTime() : new Date(alert.timestamp).getTime()}-${index}`,
+            acknowledged: false
+          };
+        } catch (error) {
+          console.warn('Error processing alert:', alert, error);
+          return {
+            ...alert,
+            id: `alert-fallback-${index}`,
+            acknowledged: false,
+            message: alert.message || 'Error processing alert',
+            severity: alert.severity || 'medium',
+            type: alert.type || 'unknown'
+          };
+        }
+      });
     
     setEnhancedAlerts(prev => {
       // Merge with existing alerts, preserving acknowledgment status
       const existingAlertsMap = new Map(prev.map(a => [a.id, a]));
-      return newEnhancedAlerts.map(newAlert => {
+      const updatedAlerts = newEnhancedAlerts.map(newAlert => {
         const existing = existingAlertsMap.get(newAlert.id);
         return existing || newAlert;
+      });
+      
+      // Sort by timestamp, newest first
+      // Handle both Date objects and timestamps
+      return updatedAlerts.sort((a, b) => {
+        const timestampA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+        const timestampB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+        return timestampB - timestampA;
       });
     });
   }, [alerts]);
 
   // Get alert icon based on type
   const getAlertIcon = (type: Alert['type']) => {
+    if (!type) {
+      return <AlertTriangle className="w-4 h-4" />;
+    }
+    
     switch (type) {
       case 'focus-loss':
         return <Eye className="w-4 h-4" />;
@@ -67,9 +102,41 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
     }
   };
 
+  // Get alert message with enhanced details
+  const getAlertMessage = (alert: Alert): string => {
+    const baseMessage = alert.message || 'No message available';
+    const metadata = alert.metadata;
+    
+    if (metadata) {
+      if (alert.type === 'multiple-faces' && metadata.faceCount) {
+        return `${baseMessage} (${metadata.faceCount} faces detected)`;
+      } else if (alert.type === 'unauthorized-item' && metadata.itemType) {
+        return `${baseMessage}: ${metadata.itemType}`;
+      } else if (alert.type === 'focus-loss' && metadata.gazeDirection) {
+        const { x, y } = metadata.gazeDirection;
+        const direction = Math.abs(x) > Math.abs(y) ? 
+          (x > 0 ? 'right' : 'left') : 
+          (y > 0 ? 'down' : 'up');
+        return `${baseMessage} (looking ${direction})`;
+      }
+    }
+    
+    return baseMessage;
+  };
+
+  // Format confidence level
+  const formatConfidence = (confidence?: number): string => {
+    if (!confidence) return '';
+    return `${Math.round(confidence * 100)}% confidence`;
+  };
+
   // Get severity styling
   const getSeverityStyles = (severity: Alert['severity'], acknowledged: boolean = false) => {
     const baseStyles = acknowledged ? 'opacity-60' : '';
+    
+    if (!severity) {
+      return `${baseStyles} bg-gray-50 border-gray-200 text-gray-800`;
+    }
     
     switch (severity) {
       case 'low':
@@ -85,6 +152,10 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
 
   // Get severity badge styling
   const getSeverityBadgeStyles = (severity: Alert['severity']) => {
+    if (!severity) {
+      return 'bg-gray-100 text-gray-800';
+    }
+    
     switch (severity) {
       case 'low':
         return 'bg-yellow-100 text-yellow-800';
@@ -164,8 +235,16 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
   };
 
   // Format timestamp
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { 
+  const formatTime = (date: Date | string | number) => {
+    // Ensure we have a valid Date object
+    const dateObj = date instanceof Date ? date : new Date(date);
+    
+    // Check if date is valid
+    if (isNaN(dateObj.getTime())) {
+      return 'Invalid time';
+    }
+    
+    return dateObj.toLocaleTimeString('en-US', { 
       hour12: false, 
       hour: '2-digit', 
       minute: '2-digit', 
@@ -285,21 +364,28 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
-            {filteredAlerts.map((alert) => (
-              <div
-                key={alert.id}
-                className={`p-4 border-l-4 ${getSeverityStyles(alert.severity, alert.acknowledged)}`}
-              >
+            {filteredAlerts.map((alert, index) => {
+              // Ensure alert object exists and has minimal required properties
+              if (!alert || typeof alert !== 'object') {
+                console.warn('Invalid alert object:', alert);
+                return null;
+              }
+
+              return (
+                <div
+                  key={alert.id || `alert-${index}`}
+                  className={`p-4 border-l-4 ${getSeverityStyles(alert.severity, alert.acknowledged)}`}
+                >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start space-x-3 flex-1">
                     <div className="flex-shrink-0 mt-0.5">
-                      {getAlertIcon(alert.type)}
+                      {getAlertIcon(alert.type || 'unknown')}
                     </div>
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getSeverityBadgeStyles(alert.severity)}`}>
-                          {alert.severity.toUpperCase()}
+                          {alert.severity?.toUpperCase() || 'UNKNOWN'}
                         </span>
                         <span className="text-xs text-gray-500">
                           {formatTime(alert.timestamp)}
@@ -313,8 +399,14 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
                       </div>
                       
                       <p className="text-sm text-gray-900 mb-1">
-                        {alert.message}
+                        {getAlertMessage(alert)}
                       </p>
+                      
+                      {alert.confidence && (
+                        <p className="text-xs text-gray-500 mb-1">
+                          {formatConfidence(alert.confidence)}
+                        </p>
+                      )}
                       
                       {alert.acknowledged && alert.acknowledgedAt && (
                         <p className="text-xs text-gray-500">
@@ -325,7 +417,7 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
                     </div>
                   </div>
                   
-                  {!alert.acknowledged && onAlertAcknowledge && (
+                  {!alert.acknowledged && onAlertAcknowledge && alert.id && (
                     <button
                       onClick={() => handleAcknowledge(alert.id)}
                       className="ml-3 inline-flex items-center px-2.5 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -336,7 +428,8 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
