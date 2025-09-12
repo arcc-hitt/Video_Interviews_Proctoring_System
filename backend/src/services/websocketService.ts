@@ -73,15 +73,25 @@ export class WebSocketService {
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JWTPayload;
         socket.data.user = decoded;
+        
         next();
       } catch (error) {
+        console.error('WebSocket authentication failed:', error);
         next(new Error('Invalid authentication token'));
       }
     });
   }
 
   private setupEventHandlers(): void {
+    console.log('🔧 Setting up WebSocket event handlers...');
+    
     this.io.on('connection', (socket: Socket) => {
+      console.log('🔌 New WebSocket connection:', {
+        socketId: socket.id,
+        userId: socket.data.user?.userId,
+        userRole: socket.data.user?.role
+      });
+      
       this.userSockets.set(socket.data.user.userId, socket);
 
       // Handle session joining
@@ -408,11 +418,18 @@ export class WebSocketService {
   private handleVideoStreamStart(socket: Socket, payload: VideoStreamStartPayload): void {
     try {
       const { sessionId } = payload;
+      const userId = socket.data.user.userId;
+      
+      console.log('🎥▶️ Video stream start event:', {
+        sessionId,
+        userId,
+        userRole: socket.data.user.role,
+        payload
+      });
       
       // Broadcast to other users in the session
       socket.to(sessionId).emit(WebSocketEventType.VIDEO_STREAM_START, payload);
       
-      console.log(`Video stream started for session ${sessionId}`);
     } catch (error) {
       console.error('Error handling video stream start:', error);
     }
@@ -434,16 +451,29 @@ export class WebSocketService {
   private handleVideoStreamData(socket: Socket, payload: VideoStreamDataPayload): void {
     try {
       const { sessionId } = payload;
+      const userId = socket.data.user.userId;
+      
+      console.log('🎥📊 Video stream data received:', {
+        sessionId,
+        userId,
+        dataSize: payload.data?.length || 0,
+        timestamp: payload.timestamp
+      });
       
       // Broadcast to interviewers in the session (candidates don't need to see other candidate streams)
       const activeSession = this.activeSessions.get(sessionId);
       if (activeSession) {
+        let sentCount = 0;
         activeSession.interviewers.forEach((interviewer) => {
           const interviewerSocket = this.userSockets.get(interviewer.userId);
           if (interviewerSocket) {
             interviewerSocket.emit(WebSocketEventType.VIDEO_STREAM_DATA, payload);
+            sentCount++;
           }
         });
+        
+      } else {
+        console.log(`No active session found for ${sessionId}`);
       }
     } catch (error) {
       console.error('Error handling video stream data:', error);
@@ -453,20 +483,33 @@ export class WebSocketService {
   private handleVideoStreamOffer(socket: Socket, payload: VideoStreamOfferPayload): void {
     try {
       const { sessionId, toUserId } = payload;
+      const fromUserId = socket.data.user.userId;
+      
+      console.log('🎥📞 WebRTC offer received:', {
+        sessionId,
+        fromUserId,
+        fromRole: socket.data.user.role,
+        toUserId,
+        offerType: payload.offer?.type
+      });
       
       // If toUserId is 'interviewer', broadcast to all interviewers in the session
       if (toUserId === 'interviewer') {
         const activeSession = this.activeSessions.get(sessionId);
         if (activeSession) {
+          let sentCount = 0;
           activeSession.interviewers.forEach((interviewer) => {
             const interviewerSocket = this.userSockets.get(interviewer.userId);
             if (interviewerSocket) {
               interviewerSocket.emit(WebSocketEventType.VIDEO_STREAM_OFFER, {
                 ...payload,
-                fromUserId: socket.data.user.userId
+                fromUserId
               });
+              sentCount++;
             }
           });
+        } else {
+          console.log(`No active session found for offer: ${sessionId}`);
         }
       } else {
         // Direct message to specific user
@@ -474,8 +517,10 @@ export class WebSocketService {
         if (targetSocket) {
           targetSocket.emit(WebSocketEventType.VIDEO_STREAM_OFFER, {
             ...payload,
-            fromUserId: socket.data.user.userId
+            fromUserId
           });
+        } else {
+          console.log(`Target user ${toUserId} not found for offer`);
         }
       }
     } catch (error) {
@@ -486,13 +531,17 @@ export class WebSocketService {
   private handleVideoStreamAnswer(socket: Socket, payload: VideoStreamAnswerPayload): void {
     try {
       const { toUserId } = payload;
+      const fromUserId = socket.data.user.userId;
+      
       const targetSocket = this.userSockets.get(toUserId);
       
       if (targetSocket) {
         targetSocket.emit(WebSocketEventType.VIDEO_STREAM_ANSWER, {
           ...payload,
-          fromUserId: socket.data.user.userId
+          fromUserId
         });
+      } else {
+        console.log(`Target user ${toUserId} not found for answer`);
       }
     } catch (error) {
       console.error('Error handling video stream answer:', error);
@@ -654,6 +703,8 @@ export class WebSocketService {
   private handleDisconnect(socket: Socket): void {
     try {
       const userId = socket.data.user?.userId;
+      const socketId = socket.id;
+      
       if (!userId) return;
 
       console.log(`User disconnected: ${userId}`);

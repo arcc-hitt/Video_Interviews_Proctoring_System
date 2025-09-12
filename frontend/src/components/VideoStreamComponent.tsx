@@ -65,32 +65,19 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
   const startStream = useCallback(async () => {
     // Prevent concurrent initialization
     if (initializingRef.current) {
-      console.log('VideoStreamComponent: Camera initialization already in progress, skipping...');
       return;
     }
 
     try {
       initializingRef.current = true;
       setIsInitializing(true);
-      console.log('VideoStreamComponent: Starting camera...');
       
       const stream = await navigator.mediaDevices.getUserMedia(DEFAULT_CONSTRAINTS);
       streamRef.current = stream;
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        console.log('VideoStreamComponent: Setting video srcObject to stream');
-        
-        videoRef.current.onloadedmetadata = () => {
-          console.log('VideoStreamComponent: Video metadata loaded');
-        };
-        
-        videoRef.current.oncanplay = () => {
-          console.log('VideoStreamComponent: Video can play');
-        };
-        
         await videoRef.current.play();
-        console.log('VideoStreamComponent: Video play() completed');
       }
 
       setState(prev => ({
@@ -99,9 +86,6 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
         isStreaming: true,
         error: null
       }));
-
-      console.log('VideoStreamComponent: Stream state updated, isStreaming:', true);
-      console.log('VideoStreamComponent: Video element srcObject set:', !!videoRef.current?.srcObject);
 
       // Call onStreamStart callback with the stream
       if (onStreamStart) {
@@ -115,7 +99,6 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
         }, 500) as unknown as number; // Capture frame every 500ms (2 FPS for CV processing)
       }
 
-      console.log('VideoStreamComponent: Camera started successfully');
       setIsInitializing(false);
 
     } catch (error) {
@@ -135,9 +118,6 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
   }, [onFrameCapture, onStreamStart, handleError]);
 
   const stopStream = useCallback(() => {
-    console.log('VideoStreamComponent: stopStream called');
-    console.trace('VideoStreamComponent: stopStream call stack');
-    
     if (streamRef.current && streamRef.current.getTracks) {
       try {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -295,7 +275,6 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      console.log('VideoStreamComponent: Cleanup effect triggered');
       stopStream();
       if (mediaRecorderRef.current && state.isRecording) {
         mediaRecorderRef.current.stop();
@@ -309,12 +288,6 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
   }, [state.isStreaming, state.stream, state.error]);
 
   // Remove auto-start camera functionality - camera will only start when user clicks the button
-
-  // Only log renders in development and throttle them
-  const shouldLogRender = process.env.NODE_ENV === 'development' && Math.random() < 0.1; // 10% of renders
-  if (shouldLogRender) {
-    console.log('VideoStreamComponent render - isStreaming:', state.isStreaming, 'isInitializing:', isInitializing);
-  }
 
   return (
     <div className="video-stream-container">

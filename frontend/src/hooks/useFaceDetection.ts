@@ -30,8 +30,6 @@ export const useFaceDetection = ({
 
   // Handle focus events from the detection service
   const handleFocusEvent = useCallback((focusEvent: FocusEvent) => {
-    console.log('Focus event detected:', focusEvent);
-
     if (onDetectionEvent && sessionId && candidateId) {
       // Create proper metadata structure according to shared types
       const metadata: Record<string, any> = {
@@ -109,7 +107,6 @@ export const useFaceDetection = ({
         serviceRef.current = service;
         setIsInitialized(service.getIsInitialized());
         setError(null);
-        console.log('BlazeFace detection service initialized successfully');
       } catch (error) {
         console.error('Failed to initialize BlazeFace detection service:', error);
         setError(error instanceof Error ? error.message : 'Face detection initialization failed');
@@ -160,7 +157,6 @@ export const useFaceDetection = ({
     setIsInitialized(false);
     setCurrentFocusStatus(null);
     setError(null);
-    console.log('Face detection service cleaned up');
   }, []);
 
   // Cleanup on unmount

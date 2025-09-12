@@ -78,13 +78,13 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
   // Handle automatic reconnection
   const handleReconnect = useCallback(() => {
     if (reconnectAttempts.current >= maxReconnectAttempts) {
-      console.log('Max reconnection attempts reached');
+      // Max reconnection attempts reached
       setError('Connection lost. Please refresh the page.');
       return;
     }
 
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-    console.log(`Attempting to reconnect in ${delay}ms (attempt ${reconnectAttempts.current + 1})`);
+    // Attempting to reconnect
     
     reconnectTimeoutRef.current = setTimeout(() => {
       reconnectAttempts.current++;
@@ -183,16 +183,12 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
   useEffect(() => {
     // Don't recreate service if it already exists and we have a valid token
     if (serviceRef.current && options.authToken) {
-      console.log('[useAlertStreaming] 📋 Service already exists, skipping recreation');
       return;
     }
 
     if (!options.authToken) {
-      console.log('[useAlertStreaming] ⚠️ No auth token provided, skipping service creation');
       return;
     }
-
-    console.log('[useAlertStreaming] 🏗️ Creating new AlertStreamingService');
     
     const config: AlertStreamingConfig = {
       backendUrl: options.backendUrl || import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000',
@@ -204,14 +200,11 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
 
     const callbacks = {
       onAlert: (alert: Alert) => {
-        console.log('[useAlertStreaming] 📥 Received alert:', alert);
-
         const now = Date.now();
         const throttleDuration = ALERT_THROTTLE_CONFIG[alert.type] || ALERT_THROTTLE_CONFIG['default'];
         const lastTimestamp = lastAlertTimestamps.current[alert.type] || 0;
 
         if (now - lastTimestamp < throttleDuration) {
-          console.log(`[useAlertStreaming] 🤫 Throttling alert of type: ${alert.type}`);
           return;
         }
         lastAlertTimestamps.current[alert.type] = now;
@@ -230,14 +223,11 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
       },
       
       onDetectionEvent: (event: DetectionEvent) => {
-        console.log('[useAlertStreaming] 📥 Received detection event:', event);
-
         const now = Date.now();
         const throttleDuration = ALERT_THROTTLE_CONFIG[event.eventType] || ALERT_THROTTLE_CONFIG['default'];
         const lastTimestamp = lastAlertTimestamps.current[event.eventType] || 0;
 
         if (now - lastTimestamp < throttleDuration) {
-          console.log(`[useAlertStreaming] 🤫 Throttling detection event as alert of type: ${event.eventType}`);
           return;
         }
         lastAlertTimestamps.current[event.eventType] = now;
@@ -255,12 +245,11 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
         setAlerts(prev => [alert, ...prev]);
       },
       
-      onManualFlag: (flag: ManualFlag) => {
-        console.log('Manual flag received:', flag);
+      onManualFlag: () => {
+        // Manual flag received
       },
       
       onConnect: () => {
-        console.log('[useAlertStreaming] ✅ Alert streaming connected');
         setIsConnected(true);
         setIsConnecting(false);
         setError(null);
@@ -269,7 +258,6 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
       },
       
       onDisconnect: () => {
-        console.log('[useAlertStreaming] ❌ Alert streaming disconnected');
         setIsConnected(false);
         setIsConnecting(false);
         
@@ -280,7 +268,7 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
       },
       
       onError: (err: Error) => {
-        console.error('[useAlertStreaming] ❌ Alert streaming error:', err);
+        console.error('[useAlertStreaming] Alert streaming error:', err);
         setError(err.message);
         setIsConnecting(false);
         if (options.onError) {
@@ -298,7 +286,6 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
     serviceRef.current = new AlertStreamingService(config, callbacks);
 
     return () => {
-      console.log('[useAlertStreaming] 🧹 Effect cleanup triggered');
       clearReconnectTimeout();
       // Don't destroy service immediately in cleanup (React StrictMode issue)
       // Service will be cleaned up when component actually unmounts or token changes
@@ -308,7 +295,6 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
   // Cleanup effect for component unmount
   useEffect(() => {
     return () => {
-      console.log('[useAlertStreaming] 🧹 Component unmounting, destroying service');
       if (serviceRef.current) {
         serviceRef.current.destroy();
         serviceRef.current = null;
@@ -320,20 +306,14 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
   // Auto-connect effect with better debouncing and service check
   useEffect(() => {
     if (options.autoConnect !== false && options.authToken && serviceRef.current && !isConnected && !isConnecting) {
-      console.log('[useAlertStreaming] Auto-connecting to alert stream');
-      
       // Add debounce to prevent rapid connection attempts in StrictMode
       const connectTimer = setTimeout(() => {
         if (serviceRef.current && !isConnected && !isConnecting && options.authToken) {
-          console.log('[useAlertStreaming] 🚀 Executing delayed connect');
           connect();
-        } else {
-          console.log('[useAlertStreaming] ⏹️ Skipping connect due to state change');
         }
-      }, 200); // Increased delay
+      }, 100);
       
       return () => {
-        console.log('[useAlertStreaming] 🚫 Cancelling connect timer');
         clearTimeout(connectTimer);
       };
     }
@@ -341,27 +321,15 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
 
   // Handle session changes with debouncing and better checks
   useEffect(() => {
-    console.log('[useAlertStreaming] Session change effect triggered:', {
-      isConnected,
-      sessionId: options.sessionId,
-      hasService: !!serviceRef.current
-    });
-    
     if (isConnected && options.sessionId && serviceRef.current) {
-      console.log('[useAlertStreaming] 🔄 Session changed, scheduling join:', options.sessionId);
-      
       // Debounce session joining to prevent multiple rapid calls
       const sessionTimer = setTimeout(() => {
         if (serviceRef.current && isConnected && options.sessionId) {
-          console.log('[useAlertStreaming] 🚪 Executing delayed session join:', options.sessionId);
           joinSession(options.sessionId);
-        } else {
-          console.log('[useAlertStreaming] ⏹️ Skipping session join due to state change');
         }
       }, 500); // Increased delay for stability
       
       return () => {
-        console.log('[useAlertStreaming] 🚫 Cancelling session join timer');
         clearTimeout(sessionTimer);
       };
     }

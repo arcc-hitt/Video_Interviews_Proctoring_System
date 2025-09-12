@@ -131,7 +131,14 @@ export const InterviewerDashboard: React.FC = () => {
   // Initialize WebSocket connection for WebRTC and session management
   // Note: Alert streaming is handled separately by useAlertStreaming hook
   const initializeWebSocket = useCallback(() => {
-    if (!authState.token || socketRef.current?.connected) return;
+    if (!authState.token) return;
+
+    // Clean up existing socket if it exists
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
 
     const socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000', {
       auth: {
@@ -139,16 +146,22 @@ export const InterviewerDashboard: React.FC = () => {
       },
       transports: ['websocket', 'polling'],
       timeout: 10000,
-      forceNew: false, // Reuse existing connection if available
+      forceNew: true, // Force new connection to avoid conflicts
       autoConnect: true
     });
 
     socket.on('connect', () => {
-      console.log('Connected to WebSocket server for WebRTC');
+      // If there's a selected session, join it now that we're connected
+      if (selectedSession) {
+        socket.emit('join_session', {
+          sessionId: selectedSession.sessionId,
+          role: 'interviewer'
+        });
+      }
     });
 
     socket.on('disconnect', () => {
-      console.log('Disconnected from WebSocket server');
+      // WebSocket disconnected
     });
 
     socket.on('session_joined', (data) => {
@@ -170,39 +183,63 @@ export const InterviewerDashboard: React.FC = () => {
     });
 
     // WebRTC signaling events
-    socket.on('video_stream_offer', handleVideoOffer);
-    socket.on('video_stream_answer', handleVideoAnswer);
-    socket.on('video_stream_ice_candidate', handleIceCandidate);
+    socket.on('video_stream_offer', (data) => {
+      handleVideoOffer(data);
+    });
+    socket.on('video_stream_answer', (data) => {
+      handleVideoAnswer(data);
+    });
+    socket.on('video_stream_ice_candidate', (data) => {
+      handleIceCandidate(data);
+    });
 
     socketRef.current = socket;
 
     return () => {
-      socket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
     };
-  }, [authState.token]);
+  }, [authState.token, selectedSession]);
 
   // WebRTC handlers
   const handleVideoOffer = async (data: any) => {
     try {
-      console.log('Handling video offer from:', data.fromUserId);
+      // Only proceed if we're in the right session
+      if (!selectedSession || data.sessionId !== selectedSession.sessionId) {
+        console.warn('Offer received for wrong session or no session selected');
+        return;
+      }
+      
       setVideoStreamStatus('connecting');
       
-      // Always setup a fresh peer connection for new offers
+      // Setup peer connection first
       setupPeerConnection();
 
-      const pc = peerConnectionRef.current!;
+      const pc = peerConnectionRef.current;
+      if (!pc) {
+        console.error('Failed to create peer connection');
+        setVideoStreamStatus('disconnected');
+        return;
+      }
+
       await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      socketRef.current?.emit('video_stream_answer', {
-        sessionId: selectedSession?.sessionId,
-        toUserId: data.fromUserId,
-        answer: answer
-      });
-      
-      console.log('Video answer sent to:', data.fromUserId);
+      if (socketRef.current) {
+        socketRef.current.emit('video_stream_answer', {
+          sessionId: selectedSession.sessionId,
+          toUserId: data.fromUserId,
+          answer: answer
+        });
+      } else {
+        console.error('Socket not available to send answer');
+        setVideoStreamStatus('disconnected');
+      }
     } catch (error) {
       console.error('Error handling video offer:', error);
       setVideoStreamStatus('disconnected');
@@ -210,21 +247,28 @@ export const InterviewerDashboard: React.FC = () => {
   };
 
   const handleVideoAnswer = async (data: any) => {
-    if (peerConnectionRef.current) {
-      await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+    try {
+      if (peerConnectionRef.current) {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+      }
+    } catch (error) {
+      console.error('Error handling video answer:', error);
     }
   };
 
   const handleIceCandidate = async (data: any) => {
-    if (peerConnectionRef.current) {
-      await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+    try {
+      if (peerConnectionRef.current && data.candidate) {
+        await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+      }
+    } catch (error) {
+      console.error('Error adding ICE candidate:', error);
     }
   };
 
   const setupPeerConnection = () => {
     // Clean up existing peer connection if it exists
     if (peerConnectionRef.current) {
-      console.log('Cleaning up existing peer connection');
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
@@ -232,23 +276,27 @@ export const InterviewerDashboard: React.FC = () => {
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
       ],
       iceCandidatePoolSize: 10
     });
 
     pc.onicecandidate = (event) => {
-      if (event.candidate && selectedSession && connectedUsers?.candidates[0]?.userId) {
-        socketRef.current?.emit('video_stream_ice_candidate', {
-          sessionId: selectedSession.sessionId,
-          toUserId: connectedUsers.candidates[0].userId,
-          candidate: event.candidate
-        });
+      if (event.candidate && selectedSession && socketRef.current) {
+        // Find the candidate user to send ICE candidate to
+        const candidateUserId = connectedUsers?.candidates[0]?.userId;
+        if (candidateUserId) {
+          socketRef.current.emit('video_stream_ice_candidate', {
+            sessionId: selectedSession.sessionId,
+            toUserId: candidateUserId,
+            candidate: event.candidate
+          });
+        }
       }
     };
 
     pc.ontrack = (event) => {
-      console.log('Received remote stream');
       if (videoRef.current && event.streams[0]) {
         // Stop any existing video playback to prevent conflicts
         if (videoRef.current.srcObject) {
@@ -266,50 +314,56 @@ export const InterviewerDashboard: React.FC = () => {
         if (playPromise !== undefined) {
           playPromise
             .then(() => {
-              console.log('Video playback started successfully');
+              // Video started successfully
             })
             .catch((error) => {
-              console.warn('Video playback failed:', error);
+              console.warn('Video playback failed, retrying...', error);
               // Try again after a short delay
               setTimeout(() => {
                 if (videoRef.current && videoRef.current.srcObject) {
-                  videoRef.current.play().catch(console.error);
+                  videoRef.current.play().catch((retryError) => {
+                    console.error('Video playback retry failed:', retryError);
+                  });
                 }
-              }, 100);
+              }, 500);
             });
         }
       }
     };
 
     pc.onconnectionstatechange = () => {
-      console.log('Peer connection state:', pc.connectionState);
-      
-      if (pc.connectionState === 'connecting') {
-        setVideoStreamStatus('connecting');
-      } else if (pc.connectionState === 'connected') {
-        setVideoStreamStatus('connected');
-      } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        console.log('Peer connection failed/disconnected, cleaning up');
-        setIsVideoStreamActive(false);
-        setVideoStreamStatus('disconnected');
-        if (videoRef.current) {
-          videoRef.current.pause();
-          videoRef.current.srcObject = null;
-        }
+      switch (pc.connectionState) {
+        case 'connecting':
+          setVideoStreamStatus('connecting');
+          break;
+        case 'connected':
+          setVideoStreamStatus('connected');
+          break;
+        case 'failed':
+        case 'disconnected':
+        case 'closed':
+          setIsVideoStreamActive(false);
+          setVideoStreamStatus('disconnected');
+          if (videoRef.current) {
+            videoRef.current.pause();
+            videoRef.current.srcObject = null;
+          }
+          break;
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log('ICE connection state:', pc.iceConnectionState);
-      
-      // Handle ICE connection failures
-      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-        console.log('ICE connection failed/disconnected');
-        setIsVideoStreamActive(false);
-        setVideoStreamStatus('disconnected');
-      } else if (pc.iceConnectionState === 'connected') {
-        setIsVideoStreamActive(true);
-        setVideoStreamStatus('connected');
+      switch (pc.iceConnectionState) {
+        case 'connected':
+        case 'completed':
+          setIsVideoStreamActive(true);
+          setVideoStreamStatus('connected');
+          break;
+        case 'failed':
+        case 'disconnected':
+          setIsVideoStreamActive(false);
+          setVideoStreamStatus('disconnected');
+          break;
       }
     };
 
@@ -318,20 +372,53 @@ export const InterviewerDashboard: React.FC = () => {
 
   // Join session for monitoring
   const joinSession = async (session: InterviewSession) => {
-    console.log('Joining session for monitoring:', session.sessionId);
-    
     setSelectedSession(session);
     clearAlerts();
     setIsVideoStreamActive(false);
     setVideoStreamStatus('waiting');
 
-    // Only use the regular WebSocket for WebRTC and general session management
-    // The alert streaming will handle detection events automatically
-    if (socketRef.current) {
-      socketRef.current.emit('join_session', {
-        sessionId: session.sessionId,
-        role: 'interviewer'
+    // Function to emit join session
+    const emitJoinSession = () => {
+      if (socketRef.current?.connected) {
+        const joinPayload = {
+          sessionId: session.sessionId,
+          role: 'interviewer'
+        };
+        
+        socketRef.current.emit('join_session', joinPayload);
+        
+        // Add a listener for the session_joined response
+        socketRef.current.once('session_joined', () => {
+          // Session joined successfully
+        });
+        
+        return true;
+      } else {
+        console.warn('Cannot join session - WebSocket not connected');
+        return false;
+      }
+    };
+
+    // Try to join immediately if WebSocket is connected
+    if (!emitJoinSession()) {
+      // Wait for WebSocket to connect or timeout after 5 seconds
+      const waitForConnection = new Promise<boolean>((resolve) => {
+        const checkConnection = () => {
+          if (socketRef.current?.connected) {
+            resolve(emitJoinSession());
+          } else {
+            setTimeout(checkConnection, 100);
+          }
+        };
+        
+        // Start checking
+        setTimeout(checkConnection, 100);
+        
+        // Timeout after 5 seconds
+        setTimeout(() => resolve(false), 5000);
       });
+      
+      await waitForConnection;
     }
 
     // The alert streaming connection will automatically connect and join the session
@@ -641,10 +728,45 @@ export const InterviewerDashboard: React.FC = () => {
   // Effects
   useEffect(() => {
     fetchActiveSessions();
-    // Initialize WebRTC WebSocket connection (separate from alert streaming)
-    const cleanup = initializeWebSocket();
-    return cleanup;
-  }, [fetchActiveSessions, initializeWebSocket]);
+  }, [fetchActiveSessions]);
+
+  // Initialize WebSocket connection when component mounts or auth changes
+  useEffect(() => {
+    if (authState.token) {
+      const cleanup = initializeWebSocket();
+      return cleanup;
+    }
+  }, [authState.token, initializeWebSocket]);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      // Clean up WebSocket
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      
+      // Clean up peer connection
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+      
+      // Clean up video
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      }
+      
+      // Clean up session timer
+      if (sessionTimerRef.current) {
+        clearInterval(sessionTimerRef.current);
+        sessionTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleLogout = () => {
     if (socketRef.current) {
@@ -937,8 +1059,20 @@ export const InterviewerDashboard: React.FC = () => {
                       ref={videoRef}
                       autoPlay
                       playsInline
+                      muted={false}
+                      controls={false}
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        console.error('Video error:', e);
+                      }}
                     />
+                    
+                    {/* Video Stream Status Overlay */}
+                    {isVideoStreamActive && videoStreamStatus === 'connected' && (
+                      <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded text-xs font-medium">
+                        🔴 LIVE
+                      </div>
+                    )}
                     
                     {/* Video Stream Placeholder/Status */}
                     {!isVideoStreamActive && (
@@ -948,7 +1082,7 @@ export const InterviewerDashboard: React.FC = () => {
                             <>
                               <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center border-2 border-gray-600 rounded-full">
                                 <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                 </svg>
                               </div>
                               <h3 className="text-lg font-medium mb-2">Waiting for Candidate</h3>
@@ -964,6 +1098,9 @@ export const InterviewerDashboard: React.FC = () => {
                               <h3 className="text-lg font-medium mb-2">Connecting...</h3>
                               <p className="text-gray-400 text-sm">
                                 Establishing video connection with candidate
+                              </p>
+                              <p className="text-gray-500 text-xs mt-2">
+                                Session: {selectedSession?.sessionId?.slice(-8)}
                               </p>
                             </>
                           )}
