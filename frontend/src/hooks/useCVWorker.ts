@@ -39,6 +39,7 @@ interface UseCVWorkerReturn {
 
 export const useCVWorker = (options: UseCVWorkerOptions = {}): UseCVWorkerReturn => {
   const workerRef = useRef<Worker | null>(null);
+  const isInitializing = useRef(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,9 +49,12 @@ export const useCVWorker = (options: UseCVWorkerOptions = {}): UseCVWorkerReturn
 
   // Initialize worker
   const initialize = useCallback(async (): Promise<void> => {
-    if (workerRef.current) {
-      return; // Already initialized
+    if (workerRef.current || isInitializing.current) {
+      console.log('CV Worker: Already initialized or initializing, skipping...');
+      return; // Already initialized or initializing
     }
+
+    isInitializing.current = true;
 
     try {
       // Create worker
@@ -67,7 +71,16 @@ export const useCVWorker = (options: UseCVWorkerOptions = {}): UseCVWorkerReturn
         if (workerError) {
           const error = new Error(workerError);
           setError(workerError);
-          onError?.(error);
+          
+          // For initialization errors related to CORS/model loading, 
+          // don't treat as fatal - just log and continue
+          if (workerError.includes('Failed to fetch') || workerError.includes('CORS')) {
+            console.warn('CV Worker model loading failed (non-fatal):', workerError);
+            // Still mark as initialized so the worker can process frames without object detection
+            setIsInitialized(true);
+          } else {
+            onError?.(error);
+          }
           
           // Reject pending request if any
           if (id && pendingRequests.current.has(id)) {
@@ -82,6 +95,7 @@ export const useCVWorker = (options: UseCVWorkerOptions = {}): UseCVWorkerReturn
           case 'INITIALIZED':
             setIsInitialized(true);
             setError(null);
+            isInitializing.current = false;
             break;
 
           case 'FRAME_PROCESSED':
@@ -120,6 +134,7 @@ export const useCVWorker = (options: UseCVWorkerOptions = {}): UseCVWorkerReturn
       const errorMessage = err instanceof Error ? err.message : 'Failed to initialize CV worker';
       setError(errorMessage);
       onError?.(new Error(errorMessage));
+      isInitializing.current = false;
     }
   }, [onResult, onError]);
 

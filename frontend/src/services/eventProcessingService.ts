@@ -357,13 +357,6 @@ export class DetectionEventProcessingService implements EventProcessingService {
   }
 
   /**
-   * Check if user is authenticated
-   */
-  private isAuthenticated(): boolean {
-    return !!this.getAuthToken();
-  }
-
-  /**
    * Get offline queue status
    */
   public getOfflineQueueStatus() {

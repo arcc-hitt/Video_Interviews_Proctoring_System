@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { MediaPipeFaceDetectionService } from '../services/faceDetectionService';
+import { BlazeFaceDetectionService } from '../services/blazeFaceDetectionService';
 import type { FocusEvent, FocusStatus, DetectionEvent } from '../types';
 
 interface UseFaceDetectionOptions {
@@ -23,10 +23,74 @@ export const useFaceDetection = ({
   sessionId = '',
   candidateId = ''
 }: UseFaceDetectionOptions = {}): UseFaceDetectionReturn => {
-  const serviceRef = useRef<MediaPipeFaceDetectionService | null>(null);
+  const serviceRef = useRef<BlazeFaceDetectionService | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [currentFocusStatus, setCurrentFocusStatus] = useState<FocusStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Handle focus events from the detection service
+  const handleFocusEvent = useCallback((focusEvent: FocusEvent) => {
+    console.log('Focus event detected:', focusEvent);
+
+    if (onDetectionEvent && sessionId && candidateId) {
+      // Create proper metadata structure according to shared types
+      const metadata: Record<string, any> = {
+        eventSource: 'face-detection',
+        processingTime: Date.now() - focusEvent.timestamp.getTime()
+      };
+
+      // Add faceCount if available
+      if (focusEvent.metadata.faceCount !== undefined) {
+        metadata.faceCount = focusEvent.metadata.faceCount;
+      }
+
+      // Add gazeDirection if available and properly structured
+      if (focusEvent.metadata.gazeDirection) {
+        metadata.gazeDirection = {
+          x: Number(focusEvent.metadata.gazeDirection.x) || 0,
+          y: Number(focusEvent.metadata.gazeDirection.y) || 0
+        };
+      }
+
+      // Add description based on event type and metadata
+      let description = '';
+      switch (focusEvent.type) {
+        case 'absence':
+          description = 'Candidate not visible in camera frame';
+          break;
+        case 'multiple-faces':
+          description = `Multiple faces detected: ${focusEvent.metadata.faceCount || 'unknown'} faces`;
+          break;
+        case 'focus-loss':
+          description = 'Candidate looking away from screen';
+          break;
+        case 'focus-restored':
+          description = 'Candidate attention restored';
+          break;
+        default:
+          description = `Focus tracking event: ${focusEvent.type}`;
+      }
+      metadata.description = description;
+
+      // Add any other metadata fields that are safe to pass through
+      if (focusEvent.metadata.previousState !== undefined) {
+        metadata.previousState = focusEvent.metadata.previousState;
+      }
+
+      // Convert FocusEvent to DetectionEvent format
+      const detectionEvent: DetectionEvent = {
+        sessionId,
+        candidateId,
+        eventType: focusEvent.type,
+        timestamp: focusEvent.timestamp,
+        ...(focusEvent.duration && focusEvent.duration > 0 && { duration: focusEvent.duration }),
+        confidence: focusEvent.confidence,
+        metadata
+      };
+
+      onDetectionEvent(detectionEvent);
+    }
+  }, [onDetectionEvent, sessionId, candidateId]);
 
   // Initialize the face detection service
   useEffect(() => {
@@ -34,77 +98,56 @@ export const useFaceDetection = ({
 
     const initializeService = async () => {
       try {
-        const service = new MediaPipeFaceDetectionService();
+        const service = BlazeFaceDetectionService.getInstance();
         
         // Set up focus event handler
-        service.onFocusEvent = (focusEvent: FocusEvent) => {
-          handleFocusEvent(focusEvent);
-        };
+        service.onFocusEvent = handleFocusEvent;
+
+        // Wait for proper initialization
+        await service.initialize();
 
         serviceRef.current = service;
-        setIsInitialized(true);
+        setIsInitialized(service.getIsInitialized());
         setError(null);
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to initialize face detection';
-        setError(errorMessage);
-        console.error('Face detection initialization error:', err);
+        console.log('BlazeFace detection service initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize BlazeFace detection service:', error);
+        setError(error instanceof Error ? error.message : 'Face detection initialization failed');
+        setIsInitialized(false);
       }
     };
 
     initializeService();
+  }, [enabled, handleFocusEvent]);
 
-    return () => {
-      if (serviceRef.current) {
-        serviceRef.current.cleanup();
-        serviceRef.current = null;
-      }
-      setIsInitialized(false);
-    };
-  }, [enabled]);
-
-  // Handle focus events and convert to detection events
-  const handleFocusEvent = useCallback((focusEvent: FocusEvent) => {
-    if (!onDetectionEvent || !sessionId || !candidateId) return;
-
-    // Convert FocusEvent to DetectionEvent
-    const detectionEvent: DetectionEvent = {
-      sessionId,
-      candidateId,
-      eventType: mapFocusEventToDetectionType(focusEvent.type),
-      timestamp: focusEvent.timestamp,
-      duration: focusEvent.duration,
-      confidence: focusEvent.confidence,
-      metadata: {
-        ...focusEvent.metadata,
-        originalEventType: focusEvent.type
-      }
-    };
-
-    onDetectionEvent(detectionEvent);
-  }, [onDetectionEvent, sessionId, candidateId]);
-
-  // Process a video frame for face detection
+  // Process video frame for face detection
   const processFrame = useCallback(async (imageData: ImageData): Promise<void> => {
     if (!serviceRef.current || !isInitialized || !enabled) {
       return;
     }
 
     try {
-      // Detect faces in the frame
-      const faceDetectionResult = await serviceRef.current.detectFace(imageData);
+      const result = await serviceRef.current.detectFace(imageData);
       
-      // Track gaze direction from detected landmarks
-      const gazeDirection = serviceRef.current.trackGazeDirection(faceDetectionResult.landmarks);
-      
-      // Check focus status and handle timers
-      const focusStatus = serviceRef.current.checkFocusStatus(gazeDirection, faceDetectionResult.faces.length);
-      
-      setCurrentFocusStatus(focusStatus);
-      setError(null);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Face detection processing error';
-      setError(errorMessage);
-      console.error('Face detection processing error:', err);
+      // Update current focus status if we have faces
+      if (result.faces.length > 0) {
+        const face = result.faces[0];
+        const gazeDirection = serviceRef.current.trackGazeDirection(face.landmarks);
+        const focusStatus = serviceRef.current.checkFocusStatus(gazeDirection, result.faces.length);
+        setCurrentFocusStatus(focusStatus);
+      } else {
+        // No faces detected
+        setCurrentFocusStatus({
+          isFocused: false,
+          gazeDirection: { x: 0, y: 0, isLookingAtScreen: false, confidence: 0 },
+          faceCount: 0,
+          isPresent: false,
+          confidence: 0
+        });
+      }
+    } catch (error) {
+      console.error('Face detection processing error:', error);
+      setError(error instanceof Error ? error.message : 'Face detection processing failed');
     }
   }, [isInitialized, enabled]);
 
@@ -117,7 +160,15 @@ export const useFaceDetection = ({
     setIsInitialized(false);
     setCurrentFocusStatus(null);
     setError(null);
+    console.log('Face detection service cleaned up');
   }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanup();
+    };
+  }, [cleanup]);
 
   return {
     isInitialized,
@@ -127,24 +178,3 @@ export const useFaceDetection = ({
     error
   };
 };
-
-// Helper function to map focus event types to detection event types
-function mapFocusEventToDetectionType(focusEventType: FocusEvent['type']): DetectionEvent['eventType'] {
-  switch (focusEventType) {
-    case 'focus-loss':
-      return 'focus-loss';
-    case 'absence':
-      return 'absence';
-    case 'multiple-faces':
-      return 'multiple-faces';
-    case 'focus-restored':
-    case 'presence-restored':
-      // These are positive events, we might want to log them differently
-      // For now, we'll treat them as focus-loss with different metadata
-      return 'focus-loss';
-    default:
-      return 'focus-loss';
-  }
-}
-
-export default useFaceDetection;

@@ -15,10 +15,12 @@ interface RequestConfig extends RequestInit {
 }
 
 class ApiService {
-  private baseURL = '';
+  private baseURL: string;
   private onUnauthorized?: () => void;
 
   constructor() {
+    // Set the backend URL from environment variable
+    this.baseURL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
     // Set up global error handling for 401 responses
     this.setupResponseInterceptor();
   }
