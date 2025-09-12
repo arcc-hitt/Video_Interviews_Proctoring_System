@@ -140,7 +140,7 @@ router.get('/:reportId/export',
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { reportId } = req.params;
-      const { format, includeManualObservations } = req.query as any;
+      const { format, includeManualObservations } = (req as any).validatedQuery;
       
       let buffer: Buffer;
       let contentType: string;
