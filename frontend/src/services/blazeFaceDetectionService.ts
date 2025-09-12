@@ -83,8 +83,6 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
 
   private async initializeBlazeFace(): Promise<void> {
     try {
-      console.log('Initializing TensorFlow.js BlazeFace...');
-      
       // Set TensorFlow.js backend
       await tf.setBackend('webgl');
       await tf.ready();
@@ -93,7 +91,6 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       this.model = await blazeface.load();
       
       this.isInitialized = true;
-      console.log('BlazeFace model loaded successfully');
     } catch (error) {
       console.error('Failed to initialize BlazeFace:', error);
       this.isInitialized = false;
@@ -389,7 +386,6 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
   }
 
   private emitFocusEvent(event: FocusEvent): void {
-    console.log('Focus event:', event);
     if (this.onFocusEvent) {
       this.onFocusEvent(event);
     }
@@ -405,7 +401,6 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     }
     
     this.isInitialized = false;
-    console.log('BlazeFace detection service cleaned up');
   }
 
   public getCurrentFocusStatus(): FocusStatus | null {

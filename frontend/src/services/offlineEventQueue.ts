@@ -188,13 +188,11 @@ export class OfflineEventQueue {
   private setupOnlineOfflineListeners(): void {
     const handleOnline = () => {
       this.isOnline = true;
-      console.log('Network connection restored, syncing queued events...');
       this.syncEvents();
     };
 
     const handleOffline = () => {
       this.isOnline = false;
-      console.log('Network connection lost, events will be queued offline');
     };
 
     window.addEventListener('online', handleOnline);

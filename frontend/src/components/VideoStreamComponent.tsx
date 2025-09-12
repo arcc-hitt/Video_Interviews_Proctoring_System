@@ -306,7 +306,6 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
   // Debug effect to monitor state changes (throttled)
   useEffect(() => {
     // Only log state changes, don't log every render
-    // console.log('VideoStreamComponent: State changed - isStreaming:', state.isStreaming, 'stream:', !!state.stream, 'error:', state.error);
   }, [state.isStreaming, state.stream, state.error]);
 
   // Remove auto-start camera functionality - camera will only start when user clicks the button

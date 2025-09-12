@@ -48,7 +48,6 @@ export class EnhancedMonitoringService {
       await this.audioService.startMonitoring();
 
       this.isActive = true;
-      console.log('Enhanced monitoring started successfully');
     } catch (error) {
       console.error('Failed to start enhanced monitoring:', error);
       throw error;
@@ -61,7 +60,6 @@ export class EnhancedMonitoringService {
   public stopMonitoring(): void {
     this.audioService.stopMonitoring();
     this.isActive = false;
-    console.log('Enhanced monitoring stopped');
   }
 
   /**

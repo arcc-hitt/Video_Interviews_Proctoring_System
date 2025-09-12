@@ -186,8 +186,6 @@ export class DetectionEventProcessingService implements EventProcessingService {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-
-      console.log('Event streamed successfully:', event.id);
     } catch (error) {
       console.error('Failed to stream event to backend:', error);
       throw error;
@@ -283,7 +281,6 @@ export class DetectionEventProcessingService implements EventProcessingService {
       await this.streamEventToBackend(event);
     } catch (error) {
       if (attempt < this.config.retryAttempts) {
-        console.log(`Retrying event stream (attempt ${attempt + 1}/${this.config.retryAttempts}):`, event.id);
         await this.delay(this.config.retryDelay * attempt);
         return this.streamEventWithRetry(event, attempt + 1);
       } else {

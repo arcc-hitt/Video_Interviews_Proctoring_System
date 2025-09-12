@@ -154,11 +154,9 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Detection events API response:', data); // Debug log
         if (data.success) {
           // Handle paginated response structure
           const events = data.data?.items || data.data || [];
-          console.log('Parsed events:', events); // Debug log
           setDetectionEvents(Array.isArray(events) ? events : []);
         } else {
           console.warn('API returned success=false:', data);

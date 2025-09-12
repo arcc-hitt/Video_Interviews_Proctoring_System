@@ -8,7 +8,6 @@ export const authTest = {
    */
   async testLogin(email: string = 'test@example.com', password: string = 'password123') {
     try {
-      console.log('Testing login...');
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -18,15 +17,6 @@ export const authTest = {
       });
 
       const data = await response.json();
-      console.log('Login response:', data);
-
-      if (response.ok) {
-        console.log('Login successful!');
-        console.log('Token:', data.data?.token);
-        console.log('User:', data.data?.user);
-      } else {
-        console.log('Login failed:', data.error || data.message);
-      }
 
       return data;
     } catch (error) {
@@ -45,7 +35,6 @@ export const authTest = {
     role: 'candidate' | 'interviewer' = 'candidate'
   ) {
     try {
-      console.log('Testing registration...');
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {
@@ -55,15 +44,6 @@ export const authTest = {
       });
 
       const data = await response.json();
-      console.log('Registration response:', data);
-
-      if (response.ok) {
-        console.log('Registration successful!');
-        console.log('Token:', data.data?.token);
-        console.log('User:', data.data?.user);
-      } else {
-        console.log('Registration failed:', data.error || data.message);
-      }
 
       return data;
     } catch (error) {
@@ -79,11 +59,9 @@ export const authTest = {
     try {
       const token = localStorage.getItem('auth_token');
       if (!token) {
-        console.log('No token found in localStorage');
         return null;
       }
 
-      console.log('Testing protected endpoint...');
       const response = await fetch('/api/auth/me', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -92,14 +70,6 @@ export const authTest = {
       });
 
       const data = await response.json();
-      console.log('Profile response:', data);
-
-      if (response.ok) {
-        console.log('Protected endpoint access successful!');
-        console.log('User profile:', data.data);
-      } else {
-        console.log('Protected endpoint access failed:', data.error || data.message);
-      }
 
       return data;
     } catch (error) {
@@ -114,7 +84,6 @@ export const authTest = {
   clearAuth() {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
-    console.log('Auth data cleared');
   },
 
   /**
@@ -123,10 +92,6 @@ export const authTest = {
   checkAuthStatus() {
     const token = localStorage.getItem('auth_token');
     const user = localStorage.getItem('auth_user');
-    
-    console.log('Current auth status:');
-    console.log('Token:', token ? 'Present' : 'Not found');
-    console.log('User:', user ? JSON.parse(user) : 'Not found');
     
     return { token, user: user ? JSON.parse(user) : null };
   }

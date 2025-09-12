@@ -82,13 +82,6 @@ export class WebSocketService {
 
   private setupEventHandlers(): void {
     this.io.on('connection', (socket: Socket) => {
-      console.log(`[WebSocket] ✅ User connected: ${socket.data.user.userId}`);
-      console.log(`[WebSocket] Connection details:`, {
-        socketId: socket.id,
-        userId: socket.data.user.userId,
-        email: socket.data.user.email,
-        role: socket.data.user.role
-      });
       this.userSockets.set(socket.data.user.userId, socket);
 
       // Handle session joining
@@ -159,12 +152,6 @@ export class WebSocketService {
 
       // Handle disconnection
       socket.on('disconnect', (reason) => {
-        console.log(`[WebSocket] ❌ User disconnected: ${socket.data.user.userId}, reason: ${reason}`);
-        console.log(`[WebSocket] Disconnect details:`, {
-          socketId: socket.id,
-          userId: socket.data.user.userId,
-          reason
-        });
         this.handleDisconnect(socket);
       });
     });
@@ -172,13 +159,6 @@ export class WebSocketService {
 
   private async handleJoinSession(socket: Socket, payload: JoinSessionPayload): Promise<void> {
     try {
-      console.log(`[WebSocket] 🚪 JOIN_SESSION request:`, {
-        userId: socket.data.user.userId,
-        requestedSessionId: payload.sessionId,
-        requestedRole: payload.role,
-        payloadUserId: payload.userId
-      });
-      
       const { sessionId, role } = payload;
       const userId = socket.data.user.userId;
 
@@ -255,7 +235,6 @@ export class WebSocketService {
       // Notify other users in the session
       socket.to(sessionId).emit(WebSocketEventType.SESSION_JOINED, joinedPayload);
 
-      console.log(`User ${userId} joined session ${sessionId} as ${role}`);
     } catch (error) {
       console.error('Error joining session:', error);
       this.emitError(socket, 'JOIN_SESSION_ERROR', 'Failed to join session');
