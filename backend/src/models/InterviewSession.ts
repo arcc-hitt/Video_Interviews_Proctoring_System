@@ -4,6 +4,7 @@ import { InterviewSession as IInterviewSession, SessionStatus } from '../types';
 // Extend the interface to include MongoDB document properties
 export interface InterviewSessionDocument extends IInterviewSession, Document {
   _id: mongoose.Types.ObjectId;
+  candidateEmail?: string; // Add this field to the document interface
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +41,20 @@ const InterviewSessionSchema = new Schema<InterviewSessionDocument>({
     trim: true,
     minlength: 1,
     maxlength: 100
+  },
+  candidateEmail: { 
+    type: String, 
+    required: false,
+    trim: true,
+    lowercase: true,
+    validate: {
+      validator: function(v: string) {
+        if (!v) return true; // Optional field
+        // Basic email validation
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+      },
+      message: 'candidateEmail must be a valid email address'
+    }
   },
   startTime: { 
     type: Date, 

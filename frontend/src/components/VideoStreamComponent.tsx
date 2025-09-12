@@ -14,14 +14,19 @@ const DEFAULT_CONSTRAINTS: MediaConstraints = {
 
 export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
   onFrameCapture,
+  onStreamStart,
+  onStreamStop,
   onRecordingStart,
   onRecordingStop,
-  onError
+  onError,
+  showRecordingControls = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const frameIntervalRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const isProcessingFrameRef = useRef<boolean>(false);
 
   // Initialize CV Worker for offloaded processing
   const cvWorker = useCVWorker({
@@ -34,14 +39,9 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
       }
     },
     onError: (error) => {
-      console.error('CV Worker error:', error);
-      if (onError) {
-        onError({
-          type: 'PROCESSING_ERROR',
-          message: error.message,
-          originalError: error
-        });
-      }
+      console.warn('CV Worker error (non-fatal):', error);
+      // Don't call onError for CV Worker issues - they're not fatal
+      // The system can work without object detection
     },
     autoInitialize: true
   });
@@ -54,18 +54,43 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
     error: null
   });
 
+  const [isInitializing, setIsInitializing] = useState(false); // Start as false since we're not auto-starting
+  const initializingRef = useRef(false); // Prevent concurrent initialization
+
   const handleError = useCallback((error: VideoStreamError) => {
     setState(prev => ({ ...prev, error }));
     onError?.(error);
   }, [onError]);
 
   const startStream = useCallback(async () => {
+    // Prevent concurrent initialization
+    if (initializingRef.current) {
+      console.log('VideoStreamComponent: Camera initialization already in progress, skipping...');
+      return;
+    }
+
     try {
+      initializingRef.current = true;
+      setIsInitializing(true);
+      console.log('VideoStreamComponent: Starting camera...');
+      
       const stream = await navigator.mediaDevices.getUserMedia(DEFAULT_CONSTRAINTS);
+      streamRef.current = stream;
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        console.log('VideoStreamComponent: Setting video srcObject to stream');
+        
+        videoRef.current.onloadedmetadata = () => {
+          console.log('VideoStreamComponent: Video metadata loaded');
+        };
+        
+        videoRef.current.oncanplay = () => {
+          console.log('VideoStreamComponent: Video can play');
+        };
+        
         await videoRef.current.play();
+        console.log('VideoStreamComponent: Video play() completed');
       }
 
       setState(prev => ({
@@ -75,14 +100,26 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
         error: null
       }));
 
+      console.log('VideoStreamComponent: Stream state updated, isStreaming:', true);
+      console.log('VideoStreamComponent: Video element srcObject set:', !!videoRef.current?.srcObject);
+
+      // Call onStreamStart callback with the stream
+      if (onStreamStart) {
+        onStreamStart(stream);
+      }
+
       // Start frame capture for computer vision processing
       if (onFrameCapture) {
         frameIntervalRef.current = setInterval(() => {
           captureFrame();
-        }, 100) as unknown as number; // Capture frame every 100ms (10 FPS for CV processing)
+        }, 500) as unknown as number; // Capture frame every 500ms (2 FPS for CV processing)
       }
 
+      console.log('VideoStreamComponent: Camera started successfully');
+      setIsInitializing(false);
+
     } catch (error) {
+      console.error('VideoStreamComponent: Camera access failed:', error);
       const videoError: VideoStreamError = {
         type: error instanceof Error && error.name === 'NotAllowedError'
           ? 'CAMERA_ACCESS_DENIED'
@@ -91,13 +128,19 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
         originalError: error instanceof Error ? error : undefined
       };
       handleError(videoError);
+      setIsInitializing(false);
+    } finally {
+      initializingRef.current = false;
     }
-  }, [onFrameCapture, handleError]);
+  }, [onFrameCapture, onStreamStart, handleError]);
 
   const stopStream = useCallback(() => {
-    if (state.stream && state.stream.getTracks) {
+    console.log('VideoStreamComponent: stopStream called');
+    console.trace('VideoStreamComponent: stopStream call stack');
+    
+    if (streamRef.current && streamRef.current.getTracks) {
       try {
-        state.stream.getTracks().forEach(track => track.stop());
+        streamRef.current.getTracks().forEach(track => track.stop());
       } catch (error) {
         console.warn('Error stopping tracks:', error);
       }
@@ -108,51 +151,69 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
       frameIntervalRef.current = null;
     }
 
+    streamRef.current = null;
     setState(prev => ({
       ...prev,
       stream: null,
       isStreaming: false,
       error: null
     }));
-  }, [state.stream]);
+    
+    // Call onStreamStop callback
+    if (onStreamStop) {
+      onStreamStop();
+    }
+    
+    setIsInitializing(false);
+    initializingRef.current = false;
+  }, [onStreamStop]); // Add onStreamStop to dependencies
 
   const captureFrame = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
-    if (!ctx || video.videoWidth === 0 || video.videoHeight === 0) return;
-
-    // Set canvas dimensions to match video
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    // Draw current video frame to canvas
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Get image data for computer vision processing
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    if (!videoRef.current || !canvasRef.current || isProcessingFrameRef.current) return;
     
-    // Use Web Worker for processing if available, otherwise fallback to direct callback
-    if (cvWorker.isInitialized && !cvWorker.isProcessing) {
-      try {
-        await cvWorker.processFrame(imageData);
-      } catch (error) {
-        console.error('CV Worker processing failed:', error);
-        // Fallback to direct callback
-        if (onFrameCapture) {
-          onFrameCapture(imageData);
-        }
-      }
-    } else if (onFrameCapture) {
-      // Fallback to direct callback
-      onFrameCapture(imageData);
-    }
-  }, [cvWorker, onFrameCapture]);
+    isProcessingFrameRef.current = true;
+    
+    try {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-  const startRecording = useCallback(() => {
+      if (!ctx || video.videoWidth === 0 || video.videoHeight === 0) {
+        return;
+      }
+
+      // Set canvas dimensions to match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Draw current video frame to canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Get image data for computer vision processing
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      
+      // Use Web Worker for processing if available, otherwise fallback to direct callback
+      if (cvWorker.isInitialized && !cvWorker.isProcessing) {
+        try {
+          await cvWorker.processFrame(imageData);
+        } catch (error) {
+          console.error('CV Worker processing failed, falling back to direct processing:', error);
+          // Fallback to direct callback
+          if (onFrameCapture) {
+            onFrameCapture(imageData);
+          }
+        }
+      } else if (onFrameCapture) {
+        // Direct callback for computer vision processing
+        onFrameCapture(imageData);
+      }
+    } catch (error) {
+      console.error('Frame capture error:', error);
+      // Don't break the entire stream for capture errors
+    } finally {
+      isProcessingFrameRef.current = false;
+    }
+  }, [cvWorker, onFrameCapture]);  const startRecording = useCallback(() => {
     if (!state.stream) {
       handleError({
         type: 'RECORDING_FAILED',
@@ -234,21 +295,38 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      console.log('VideoStreamComponent: Cleanup effect triggered');
       stopStream();
       if (mediaRecorderRef.current && state.isRecording) {
         mediaRecorderRef.current.stop();
       }
     };
-  }, [stopStream, state.isRecording]);
+  }, []); // Remove dependencies to prevent cleanup during state changes
+
+  // Debug effect to monitor state changes (throttled)
+  useEffect(() => {
+    // Only log state changes, don't log every render
+    // console.log('VideoStreamComponent: State changed - isStreaming:', state.isStreaming, 'stream:', !!state.stream, 'error:', state.error);
+  }, [state.isStreaming, state.stream, state.error]);
+
+  // Remove auto-start camera functionality - camera will only start when user clicks the button
+
+  // Only log renders in development and throttle them
+  const shouldLogRender = process.env.NODE_ENV === 'development' && Math.random() < 0.1; // 10% of renders
+  if (shouldLogRender) {
+    console.log('VideoStreamComponent render - isStreaming:', state.isStreaming, 'isInitializing:', isInitializing);
+  }
 
   return (
     <div className="video-stream-container">
-      <div className="relative">
+      <div className="relative min-h-[300px]">
         <video
           ref={videoRef}
           className="w-full h-auto rounded-lg shadow-lg"
           playsInline
           muted
+          autoPlay
+          style={{ minHeight: '300px', backgroundColor: '#000' }}
         />
 
         {/* Hidden canvas for frame capture */}
@@ -257,55 +335,41 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
           className="hidden"
         />
 
-        {/* Stream controls */}
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2">
-          {!state.isStreaming ? (
-            <button
-              onClick={startStream}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Start Camera
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={stopStream}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Stop Camera
-              </button>
+        {/* Camera not started placeholder */}
+        {!state.isStreaming && !isInitializing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg z-10">
+            <div className="text-center text-gray-600">
+              <div className="w-16 h-16 mx-auto mb-4 bg-gray-300 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <p className="text-sm font-medium">Camera Not Started</p>
+              <p className="text-xs text-gray-500 mt-1">Click "Start Camera" to begin</p>
+            </div>
+          </div>
+        )}
 
-              {!state.isRecording ? (
-                <button
-                  onClick={startRecording}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  Start Recording
-                </button>
-              ) : (
-                <button
-                  onClick={stopRecording}
-                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
-                >
-                  Stop Recording
-                </button>
-              )}
-
-              {state.recordedChunks.length > 0 && (
-                <button
-                  onClick={downloadRecording}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                >
-                  Download
-                </button>
-              )}
-            </>
-          )}
-        </div>
+        {/* Camera initialization overlay */}
+        {isInitializing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75 rounded-lg z-20">
+            <div className="text-center text-white">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+              <p className="text-sm">Initializing Camera...</p>
+            </div>
+          </div>
+        )}
 
         {/* Status indicators */}
         <div className="absolute top-4 right-4 flex flex-col gap-2">
-          {state.isStreaming && (
+          {isInitializing && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-blue-600 text-white rounded-full text-sm">
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              Starting Camera...
+            </div>
+          )}
+
+          {state.isStreaming && !isInitializing && (
             <div className="flex items-center gap-2 px-3 py-1 bg-green-600 text-white rounded-full text-sm">
               <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
               Live
@@ -333,6 +397,58 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
               )}
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Stream controls moved outside video container for better visibility */}
+      <div className="mt-4 flex justify-center gap-2">
+        {!state.isStreaming ? (
+          <button
+            onClick={startStream}
+            disabled={isInitializing}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isInitializing ? 'Starting...' : 'Start Camera'}
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={stopStream}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Stop Camera
+            </button>
+
+            {/* Recording controls - only show for interviewers */}
+            {showRecordingControls && (
+              <>
+                {!state.isRecording ? (
+                  <button
+                    onClick={startRecording}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Start Recording
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopRecording}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                  >
+                    Stop Recording
+                  </button>
+                )}
+
+                {state.recordedChunks.length > 0 && (
+                  <button
+                    onClick={downloadRecording}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    Download
+                  </button>
+                )}
+              </>
+            )}
+          </>
         )}
       </div>
     </div>
