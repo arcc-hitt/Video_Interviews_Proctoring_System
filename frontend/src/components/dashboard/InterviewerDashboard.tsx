@@ -2,16 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import type { InterviewSession } from '../../types';
 import { io, Socket } from 'socket.io-client';
-import { AlertPanel, AlertHistory, RealTimeAlertDisplay } from '../alerts';
+import { AlertManagementPanel } from '../alerts';
 import { ReportDashboard } from './ReportDashboard';
 import { useAlertStreaming } from '../../hooks/useAlertStreaming';
-
-interface SessionNote {
-  id: string;
-  timestamp: Date;
-  note: string;
-  severity: 'low' | 'medium' | 'high';
-}
+import { toast } from 'sonner';
 
 interface ConnectedUsers {
   candidates: Array<{
@@ -33,12 +27,8 @@ export const InterviewerDashboard: React.FC = () => {
   const [activeSessions, setActiveSessions] = useState<InterviewSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<InterviewSession | null>(null);
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUsers | null>(null);
-  const [sessionNotes, setSessionNotes] = useState<SessionNote[]>([]);
-  const [newNote, setNewNote] = useState('');
-  const [noteSeverity, setNoteSeverity] = useState<'low' | 'medium' | 'high'>('medium');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAlertHistory, setShowAlertHistory] = useState(false);
   const [showReportDashboard, setShowReportDashboard] = useState(false);
   const [showCreateSession, setShowCreateSession] = useState(false);
   const [newSessionData, setNewSessionData] = useState({
@@ -94,6 +84,23 @@ export const InterviewerDashboard: React.FC = () => {
       }
     };
   }, [selectedSession?.sessionId, leaveAlertSession]);
+
+  // Show toast notifications for new alerts
+  const previousAlertsLength = useRef<number>(0);
+  useEffect(() => {
+    if (alerts.length > previousAlertsLength.current && previousAlertsLength.current > 0) {
+      // New alert(s) received
+      const newAlerts = alerts.slice(0, alerts.length - previousAlertsLength.current);
+      newAlerts.forEach(alert => {
+        const alertMessage = alert.message || `${alert.type} detected`;
+        toast.warning(alertMessage, {
+          description: `Severity: ${alert.severity}`,
+          duration: 2000
+        });
+      });
+    }
+    previousAlertsLength.current = alerts.length;
+  }, [alerts]);
 
   // Fetch active sessions
   const fetchActiveSessions = useCallback(async () => {
@@ -315,7 +322,6 @@ export const InterviewerDashboard: React.FC = () => {
     
     setSelectedSession(session);
     clearAlerts();
-    setSessionNotes([]);
     setIsVideoStreamActive(false);
     setVideoStreamStatus('waiting');
 
@@ -364,8 +370,6 @@ export const InterviewerDashboard: React.FC = () => {
     setSelectedSession(null);
     setConnectedUsers(null);
     clearAlerts();
-    setSessionNotes([]);
-    setShowAlertHistory(false);
     setIsVideoStreamActive(false);
     setVideoStreamStatus('waiting');
 
@@ -581,45 +585,6 @@ export const InterviewerDashboard: React.FC = () => {
     }
   };
 
-  // Add session note
-  const addSessionNote = async () => {
-    if (!newNote.trim() || !selectedSession) return;
-
-    try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-      const response = await fetch(`${backendUrl}/api/sessions/${selectedSession.sessionId}/observations`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          observationType: 'manual_note',
-          description: newNote,
-          severity: noteSeverity,
-          flagged: noteSeverity === 'high'
-        })
-      });
-
-      if (response.ok) {
-        const note: SessionNote = {
-          id: Date.now().toString(),
-          timestamp: new Date(),
-          note: newNote,
-          severity: noteSeverity
-        };
-        setSessionNotes(prev => [note, ...prev]);
-
-        // Also send as manual flag for real-time alerts
-        sendManualFlag(newNote, noteSeverity);
-
-        setNewNote('');
-      }
-    } catch (err) {
-      setError('Failed to add note');
-    }
-  };
-
   // Create new session
   const createNewSession = async () => {
     if (!newSessionData.candidateName.trim()) {
@@ -669,19 +634,6 @@ export const InterviewerDashboard: React.FC = () => {
   };
 
   // Helper functions
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'low':
-        return 'text-yellow-600 bg-yellow-50';
-      case 'medium':
-        return 'text-orange-600 bg-orange-50';
-      case 'high':
-        return 'text-red-600 bg-red-50';
-      default:
-        return 'text-gray-600 bg-gray-50';
-    }
-  };
-
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString();
   };
@@ -1098,107 +1050,20 @@ export const InterviewerDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Alerts and Controls */}
+              {/* Unified Alert Management */}
               <div className="space-y-6">
-                {/* Real-time Alerts */}
-                {!showAlertHistory ? (
-                  <AlertPanel
-                    alerts={alerts}
-                    onAlertAcknowledge={acknowledgeAlert}
-                    onManualFlag={sendManualFlag}
-                    sessionId={selectedSession?.sessionId}
-                    className="h-96"
-                  />
-                ) : (
-                  <AlertHistory
-                    sessionId={selectedSession?.sessionId || ''}
-                    alerts={alerts}
-                    className="h-96"
-                  />
-                )}
-
-                {/* Toggle between live alerts and history */}
-                <div className="flex justify-center">
-                  <button
-                    onClick={() => setShowAlertHistory(!showAlertHistory)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-                  >
-                    {showAlertHistory ? 'Show Live Alerts' : 'Show Alert History'}
-                  </button>
-                </div>
-
-                {/* Session Notes */}
-                <div className="bg-white shadow rounded-lg p-6">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">
-                    Session Notes
-                  </h3>
-
-                  {/* Add Note Form */}
-                  <div className="space-y-3 mb-4">
-                    <textarea
-                      value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      placeholder="Add a note about the candidate's behavior..."
-                      className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                      rows={3}
-                    />
-                    <div className="flex justify-between items-center">
-                      <select
-                        value={noteSeverity}
-                        onChange={(e) => setNoteSeverity(e.target.value as 'low' | 'medium' | 'high')}
-                        className="text-sm border border-gray-300 rounded-md px-2 py-1"
-                      >
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                      </select>
-                      <button
-                        onClick={addSessionNote}
-                        disabled={!newNote.trim()}
-                        className="px-3 py-1 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-400"
-                      >
-                        Add Note
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Notes List */}
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {sessionNotes.length === 0 ? (
-                      <p className="text-gray-500 text-sm">No notes yet</p>
-                    ) : (
-                      sessionNotes.map((note) => (
-                        <div
-                          key={note.id}
-                          className={`p-2 rounded-md ${getSeverityColor(note.severity)}`}
-                        >
-                          <p className="text-sm">{note.note}</p>
-                          <p className="text-xs mt-1">{formatTime(note.timestamp)}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+                <AlertManagementPanel
+                  alerts={alerts}
+                  onAlertAcknowledge={acknowledgeAlert}
+                  onManualFlag={sendManualFlag}
+                  sessionId={selectedSession?.sessionId}
+                  className="h-96"
+                />
               </div>
             </div>
           )}
         </div>
       </main>
-
-      {/* Real-time Alert Display Overlay */}
-      {selectedSession && (
-        <RealTimeAlertDisplay
-          alerts={alerts.slice(0, 3)} // Show only the 3 most recent alerts as overlay
-          onAlertDismiss={(alertId) => {
-            // Just acknowledge the alert
-            acknowledgeAlert(alertId);
-          }}
-          onAlertAcknowledge={acknowledgeAlert}
-          autoHideAfter={8}
-          maxDisplayAlerts={3}
-          showConfidence={true}
-        />
-      )}
 
       {/* Create Session Modal */}
       {showCreateSession && (

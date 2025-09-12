@@ -153,8 +153,23 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
   }, [isConnected, options.sessionId]);
 
   const acknowledgeAlert = useCallback((alertId: string) => {
-    setAlerts(prev => prev.filter(alert => alert.id !== alertId));
-  }, []);
+    // Mark alert as acknowledged instead of removing it
+    setAlerts(prev => prev.map(alert => 
+      alert.id === alertId 
+        ? { 
+            ...alert, 
+            acknowledged: true, 
+            acknowledgedAt: new Date(),
+            acknowledgedBy: 'Current User' // In real app, get from auth context
+          }
+        : alert
+    ));
+    
+    // Still send acknowledgment to backend if service is available
+    if (serviceRef.current && isConnected) {
+      serviceRef.current.acknowledgeAlert(alertId);
+    }
+  }, [isConnected]);
 
   const clearAlerts = useCallback(() => {
     setAlerts([]);
