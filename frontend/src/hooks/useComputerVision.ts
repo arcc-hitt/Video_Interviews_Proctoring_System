@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { MediaPipeFaceDetectionService } from '../services/faceDetectionService';
+import { BlazeFaceDetectionService } from '../services/blazeFaceDetectionService';
 import { TensorFlowObjectDetectionService } from '../services/objectDetectionService';
 import { DetectionEventProcessingService } from '../services/eventProcessingService';
 import type { 
@@ -17,6 +17,7 @@ interface UseComputerVisionOptions {
   candidateId?: string;
   onDetectionEvent?: (event: DetectionEvent) => void;
   onProcessedEvent?: (event: ProcessedEvent) => void;
+  onModelLoadError?: (error: string) => void;
 }
 
 interface UseComputerVisionReturn {
@@ -36,9 +37,10 @@ export const useComputerVision = ({
   sessionId = '',
   candidateId = '',
   onDetectionEvent,
-  onProcessedEvent
+  onProcessedEvent,
+  onModelLoadError
 }: UseComputerVisionOptions = {}): UseComputerVisionReturn => {
-  const faceServiceRef = useRef<MediaPipeFaceDetectionService | null>(null);
+  const faceServiceRef = useRef<BlazeFaceDetectionService | null>(null);
   const objectServiceRef = useRef<TensorFlowObjectDetectionService | null>(null);
   const eventServiceRef = useRef<DetectionEventProcessingService | null>(null);
   
@@ -68,15 +70,22 @@ export const useComputerVision = ({
         };
 
         // Initialize face detection service
-        const faceService = new MediaPipeFaceDetectionService();
+        const faceService = BlazeFaceDetectionService.getInstance();
+        await faceService.initialize(); // Wait for face detection to initialize
         faceService.onFocusEvent = (focusEvent: FocusEvent) => {
           handleFocusEvent(focusEvent, eventService);
         };
 
         // Initialize object detection service
         const objectService = new TensorFlowObjectDetectionService();
+        await objectService.initialize(); // Wait for object detection to initialize
         objectService.onUnauthorizedItemDetected = (item: UnauthorizedItem) => {
           handleUnauthorizedItemEvent(item, eventService);
+        };
+        objectService.onModelLoadError = (error: string) => {
+          if (onModelLoadError) {
+            onModelLoadError(error);
+          }
         };
 
         faceServiceRef.current = faceService;
@@ -85,6 +94,7 @@ export const useComputerVision = ({
 
         setIsInitialized(true);
         setError(null);
+        console.log('Computer vision services initialized successfully');
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to initialize computer vision services';
         setError(errorMessage);
@@ -115,15 +125,33 @@ export const useComputerVision = ({
   const handleFocusEvent = useCallback((focusEvent: FocusEvent, eventService: DetectionEventProcessingService) => {
     if (!sessionId || !candidateId) return;
 
+    let description = 'Candidate changed focus';
+    if (focusEvent.type === 'focus-loss' && focusEvent.metadata?.gazeDirection) {
+      const { x, y } = focusEvent.metadata.gazeDirection;
+      const HORIZONTAL_THRESHOLD = 0.2;
+      const VERTICAL_THRESHOLD = 0.15;
+
+      if (y > VERTICAL_THRESHOLD) {
+        description = 'Candidate looked down';
+      } else if (y < -VERTICAL_THRESHOLD * 1.5) { // Stricter threshold for looking up
+        description = 'Candidate looked up';
+      } else if (x > HORIZONTAL_THRESHOLD) {
+        description = 'Candidate looked right';
+      } else if (x < -HORIZONTAL_THRESHOLD) {
+        description = 'Candidate looked left';
+      }
+    }
+
     const detectionEvent: DetectionEvent = {
       sessionId,
       candidateId,
       eventType: mapFocusEventToDetectionType(focusEvent.type),
       timestamp: focusEvent.timestamp,
-      duration: focusEvent.duration,
+      ...(focusEvent.duration && focusEvent.duration > 0 && { duration: focusEvent.duration }),
       confidence: focusEvent.confidence,
       metadata: {
         ...focusEvent.metadata,
+        description, // Add detailed description
         originalEventType: focusEvent.type,
         source: 'face-detection'
       }
@@ -147,13 +175,18 @@ export const useComputerVision = ({
       candidateId,
       eventType: 'unauthorized-item',
       timestamp: item.firstDetected,
-      duration: item.persistenceDuration,
+      ...(item.persistenceDuration && item.persistenceDuration > 0 && { duration: item.persistenceDuration }),
       confidence: item.confidence,
       metadata: {
-        itemType: item.type,
-        position: item.position,
-        persistenceDuration: item.persistenceDuration,
-        source: 'object-detection'
+        objectType: item.type,
+        boundingBox: {
+          x: item.position.x,
+          y: item.position.y,
+          width: item.position.width,
+          height: item.position.height
+        },
+        description: `Unauthorized item detected: ${item.type}`,
+        eventSource: 'object-detection'
       }
     };
 
@@ -173,37 +206,117 @@ export const useComputerVision = ({
     try {
       const promises: Promise<any>[] = [];
 
-      // Face detection
+      // Face detection with improved error handling
       if (faceServiceRef.current) {
         promises.push(
-          faceServiceRef.current.detectFace(imageData).then(faceResult => {
-            const gazeDirection = faceServiceRef.current!.trackGazeDirection(faceResult.landmarks);
-            const focusStatus = faceServiceRef.current!.checkFocusStatus(gazeDirection, faceResult.faces.length);
-            setCurrentFocusStatus(focusStatus);
-            return focusStatus;
-          })
+          faceServiceRef.current.detectFace(imageData)
+            .then((faceResult: any) => {
+              if (faceResult && faceResult.faces) {
+                const gazeDirection = faceServiceRef.current!.trackGazeDirection(faceResult.landmarks || []);
+                const focusStatus = faceServiceRef.current!.checkFocusStatus(gazeDirection, faceResult.faces.length);
+                setCurrentFocusStatus(focusStatus);
+                
+                // Process focus events immediately for real-time response
+                if (focusStatus.faceCount === 0 && sessionId && candidateId) {
+                  const detectionEvent: DetectionEvent = {
+                    sessionId,
+                    candidateId,
+                    eventType: 'absence',
+                    timestamp: new Date(),
+                    confidence: 0.95,
+                    metadata: {
+                      faceCount: 0,
+                      description: 'Candidate not visible in camera frame',
+                      eventSource: 'computer-vision'
+                    }
+                  };
+                  if (onDetectionEvent) {
+                    onDetectionEvent(detectionEvent);
+                  }
+                } else if (focusStatus.faceCount > 1 && sessionId && candidateId) {
+                  const detectionEvent: DetectionEvent = {
+                    sessionId,
+                    candidateId,
+                    eventType: 'multiple-faces',
+                    timestamp: new Date(),
+                    confidence: 0.95,
+                    metadata: {
+                      faceCount: focusStatus.faceCount,
+                      description: `Multiple faces detected: ${focusStatus.faceCount} faces`,
+                      eventSource: 'computer-vision'
+                    }
+                  };
+                  if (onDetectionEvent) {
+                    onDetectionEvent(detectionEvent);
+                  }
+                }
+                
+                return focusStatus;
+              }
+              return null;
+            })
+            .catch(err => {
+              console.warn('Face detection error (non-fatal):', err);
+              return null;
+            })
         );
       }
 
-      // Object detection
+      // Object detection with improved error handling
       if (objectServiceRef.current) {
         promises.push(
-          objectServiceRef.current.detectObjects(imageData).then(objects => {
-            const unauthorizedItems = objectServiceRef.current!.classifyUnauthorizedItems(objects);
-            setUnauthorizedItems(unauthorizedItems);
-            return unauthorizedItems;
-          })
+          objectServiceRef.current.detectObjects(imageData)
+            .then(objects => {
+              if (objects && Array.isArray(objects)) {
+                const unauthorizedItems = objectServiceRef.current!.classifyUnauthorizedItems(objects);
+                setUnauthorizedItems(unauthorizedItems);
+                
+                // Generate real-time alerts for unauthorized items
+                unauthorizedItems.forEach(item => {
+                  if (item.confidence > 0.7 && sessionId && candidateId) {
+                    const detectionEvent: DetectionEvent = {
+                      sessionId,
+                      candidateId,
+                      eventType: 'unauthorized-item',
+                      timestamp: new Date(),
+                      confidence: item.confidence,
+                      metadata: {
+                        objectType: item.type,
+                        boundingBox: {
+                          x: item.position.x,
+                          y: item.position.y,
+                          width: item.position.width,
+                          height: item.position.height
+                        },
+                        description: `Unauthorized item detected: ${item.type}`,
+                        eventSource: 'object-detection'
+                      }
+                    };
+                    if (onDetectionEvent) {
+                      onDetectionEvent(detectionEvent);
+                    }
+                  }
+                });
+                
+                return unauthorizedItems;
+              }
+              return [];
+            })
+            .catch(err => {
+              console.warn('Object detection error (non-fatal):', err);
+              return [];
+            })
         );
       }
 
-      await Promise.all(promises);
+      await Promise.allSettled(promises); // Use allSettled to handle individual failures
       setError(null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Computer vision processing error';
       setError(errorMessage);
       console.error('Computer vision processing error:', err);
     }
-  }, [isInitialized, enabled]);
+  }, [isInitialized, enabled, sessionId, candidateId, onDetectionEvent]);
 
   // Get event aggregations
   const getEventAggregations = useCallback((): Map<string, EventAggregation> => {

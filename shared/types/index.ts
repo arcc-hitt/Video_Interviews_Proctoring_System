@@ -109,6 +109,7 @@ export interface InterviewSession {
   sessionId: string;
   candidateId: string;
   candidateName: string;
+  candidateEmail?: string;
   startTime: Date;
   endTime?: Date;
   duration?: number;

@@ -1,10 +1,10 @@
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';
+import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import type {
   DetectedObject,
   UnauthorizedItem,
-  ObjectDetectionService,
-  BoundingBox
+  ObjectDetectionService
 } from '../types';
 
 // interface CocoDetection {
@@ -14,10 +14,9 @@ import type {
 // }
 
 export class TensorFlowObjectDetectionService implements ObjectDetectionService {
-  private model: tf.GraphModel | null = null;
+  private model: cocoSsd.ObjectDetection | null = null;
   private isInitialized = false;
   private unauthorizedItems: Map<string, UnauthorizedItem> = new Map();
-  private classNames: string[] = [];
   
   // Configuration constants
   private readonly CONFIDENCE_THRESHOLD = 0.5;
@@ -38,61 +37,118 @@ export class TensorFlowObjectDetectionService implements ObjectDetectionService 
   };
 
   public onUnauthorizedItemDetected?: (item: UnauthorizedItem) => void;
+  public onModelLoadError?: (error: string) => void;
 
   constructor() {
-    this.initializeModel();
+    // Initialize asynchronously to avoid blocking constructor
+    this.initializeModel().catch(error => {
+      console.error('Object detection initialization failed:', error);
+      this.isInitialized = true; // Mark as initialized in fallback mode
+    });
+  }
+
+  // Add public initialize method for explicit initialization
+  public async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+    await this.initializeModel();
   }
 
   private async initializeModel(): Promise<void> {
     try {
       // Initialize TensorFlow.js backend
       await tf.ready();
+      console.log('TensorFlow.js backend ready');
       
-      // Load pre-trained COCO-SSD model
-      this.model = await tf.loadGraphModel('https://tfhub.dev/tensorflow/tfjs-model/ssd_mobilenet_v2/1/default/1', {
-        fromTFHub: true
-      });
-
-      // Initialize COCO class names (simplified list of relevant classes)
-      this.classNames = [
-        'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat',
-        'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat',
-        'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack',
-        'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
-        'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
-        'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
-        'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair',
-        'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse',
-        'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator',
-        'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
-      ];
+      console.log('Loading COCO-SSD model...');
+      
+      // Load COCO-SSD model with fallback handling
+      try {
+        this.model = await cocoSsd.load({
+          base: 'lite_mobilenet_v2', // Use lighter model for better performance
+        });
+        console.log('COCO-SSD model loaded successfully');
+      } catch (modelError) {
+        console.warn('Failed to load COCO-SSD model, trying fallback:', modelError);
+        
+        // Try alternative model loading approach
+        try {
+          this.model = await cocoSsd.load();
+          console.log('COCO-SSD fallback model loaded successfully');
+        } catch (fallbackError) {
+          console.error('All model loading attempts failed:', fallbackError);
+          this.model = null;
+          
+          // Emit error notification
+          const errorMessage = 'Object detection model failed to load. The system will continue with face detection only.';
+          if (this.onModelLoadError) {
+            this.onModelLoadError(errorMessage);
+          }
+        }
+      }
 
       this.isInitialized = true;
-      console.log('Object detection model initialized successfully');
+      
+      if (this.model) {
+        console.log('Object detection model initialized successfully');
+      } else {
+        console.log('Object detection service initialized in fallback mode (no model available)');
+      }
     } catch (error) {
-      console.error('Failed to initialize object detection model:', error);
-      throw new Error('Object detection service initialization failed');
+      console.error('Failed to initialize object detection service:', error);
+      // Don't throw error - allow service to work in fallback mode
+      this.isInitialized = true;
+      this.model = null;
+      
+      const errorMessage = 'Object detection initialization failed. The system will continue with face detection only.';
+      if (this.onModelLoadError) {
+        this.onModelLoadError(errorMessage);
+      }
+      console.log('Object detection service initialized in fallback mode due to error');
     }
   }
 
   public async detectObjects(imageData: ImageData): Promise<DetectedObject[]> {
-    if (!this.isInitialized || !this.model) {
-      throw new Error('Object detection service not initialized');
+    if (!this.isInitialized) {
+      console.warn('Object detection service not initialized, returning empty result');
+      return []; // Return empty array instead of throwing error
+    }
+
+    // If model failed to load, return empty array (fallback)
+    if (!this.model) {
+      console.warn('Object detection model not available, using fallback detection');
+      return []; // Return empty array - system will work without object detection
     }
 
     try {
-      // Convert ImageData to tensor
-      const tensor = this.imageDataToTensor(imageData);
+      // Create a canvas element from ImageData for COCO-SSD
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error('Failed to get canvas context');
+      }
+
+      canvas.width = imageData.width;
+      canvas.height = imageData.height;
+      ctx.putImageData(imageData, 0, 0);
+
+      // Run detection using COCO-SSD
+      const predictions = await this.model.detect(canvas);
       
-      // Run inference
-      const predictions = await this.model.executeAsync(tensor) as tf.Tensor[];
-      
-      // Process predictions
-      const detectedObjects = await this.processPredictions(predictions, imageData.width, imageData.height);
-      
-      // Clean up tensors
-      tensor.dispose();
-      predictions.forEach(pred => pred.dispose());
+      // Convert COCO-SSD predictions to our DetectedObject format
+      const detectedObjects: DetectedObject[] = predictions
+        .filter(prediction => prediction.score >= this.CONFIDENCE_THRESHOLD)
+        .slice(0, this.MAX_DETECTIONS)
+        .map(prediction => ({
+          class: prediction.class,
+          confidence: prediction.score,
+          boundingBox: {
+            x: prediction.bbox[0],
+            y: prediction.bbox[1],
+            width: prediction.bbox[2],
+            height: prediction.bbox[3]
+          },
+          timestamp: new Date()
+        }));
 
       return detectedObjects;
     } catch (error) {
@@ -174,64 +230,6 @@ export class TensorFlowObjectDetectionService implements ObjectDetectionService 
     });
   }
 
-  private imageDataToTensor(imageData: ImageData): tf.Tensor {
-    // Convert ImageData to tensor format expected by the model
-    const tensor = tf.browser.fromPixels(imageData)
-      .resizeNearestNeighbor([300, 300]) // MobileNet SSD expects 300x300 input
-      .cast('int32')
-      .expandDims(0);
-    
-    return tensor;
-  }
-
-  private async processPredictions(
-    predictions: tf.Tensor[], 
-    originalWidth: number, 
-    originalHeight: number
-  ): Promise<DetectedObject[]> {
-    const detectedObjects: DetectedObject[] = [];
-
-    // Extract prediction tensors
-    const boxes = await predictions[0].data(); // [1, N, 4] - bounding boxes
-    const classes = await predictions[1].data(); // [1, N] - class indices
-    const scores = await predictions[2].data(); // [1, N] - confidence scores
-    const numDetections = await predictions[3].data(); // [1] - number of detections
-
-    const numDet = Math.min(numDetections[0], this.MAX_DETECTIONS);
-
-    for (let i = 0; i < numDet; i++) {
-      const score = scores[i];
-      
-      if (score >= this.CONFIDENCE_THRESHOLD) {
-        const classIndex = Math.floor(classes[i]);
-        const className = this.classNames[classIndex] || 'unknown';
-
-        // Extract bounding box coordinates (normalized to [0, 1])
-        const yMin = boxes[i * 4];
-        const xMin = boxes[i * 4 + 1];
-        const yMax = boxes[i * 4 + 2];
-        const xMax = boxes[i * 4 + 3];
-
-        // Convert to pixel coordinates
-        const boundingBox: BoundingBox = {
-          x: xMin * originalWidth,
-          y: yMin * originalHeight,
-          width: (xMax - xMin) * originalWidth,
-          height: (yMax - yMin) * originalHeight
-        };
-
-        detectedObjects.push({
-          class: className,
-          confidence: score,
-          boundingBox,
-          timestamp: new Date()
-        });
-      }
-    }
-
-    return detectedObjects;
-  }
-
   private generateItemId(obj: DetectedObject): string {
     // Generate a unique ID based on object class and approximate position
     const x = Math.floor(obj.boundingBox.x / 50) * 50; // Grid-based positioning
@@ -255,7 +253,7 @@ export class TensorFlowObjectDetectionService implements ObjectDetectionService 
     this.unauthorizedItems.clear();
     
     if (this.model) {
-      this.model.dispose();
+      // COCO-SSD models don't need explicit disposal like GraphModels
       this.model = null;
     }
     

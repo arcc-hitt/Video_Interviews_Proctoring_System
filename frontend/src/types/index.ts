@@ -41,18 +41,24 @@ export interface SuspiciousEvent {
 }
 
 export interface Alert {
+  id?: string;
   type: 'focus-loss' | 'absence' | 'multiple-faces' | 'unauthorized-item' | 'manual_flag' | 'inactivity' | 'long_session' | 'heartbeat' | 'drowsiness' | 'eye-closure' | 'excessive-blinking' | 'background-voice' | 'multiple-voices' | 'excessive-noise' | string;
   message: string;
   timestamp: Date;
   severity: 'low' | 'medium' | 'high';
+  confidence?: number;
+  metadata?: Record<string, any>;
 }
 
 // Video streaming related types
 export interface VideoStreamProps {
   onFrameCapture?: (imageData: ImageData) => void;
+  onStreamStart?: (stream: MediaStream) => void;
+  onStreamStop?: () => void;
   onRecordingStart?: () => void;
   onRecordingStop?: () => void;
   onError?: (error: VideoStreamError) => void;
+  showRecordingControls?: boolean; // Controls whether recording buttons are shown
 }
 
 export interface VideoStreamState {
