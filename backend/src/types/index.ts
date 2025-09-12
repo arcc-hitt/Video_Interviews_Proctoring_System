@@ -114,7 +114,7 @@ export const DetectionEventMetadataSchema = z.object({
   drowsinessMetrics: DrowsinessMetricsSchema.optional(),
   audioMetrics: AudioMetricsSchema.optional(),
   description: z.string().optional()
-});
+}).passthrough(); // Allow additional fields
 
 // Detection Event Schema
 export const DetectionEventSchema = z.object({
