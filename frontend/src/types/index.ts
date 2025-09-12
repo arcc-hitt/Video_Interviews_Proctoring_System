@@ -48,6 +48,9 @@ export interface Alert {
   severity: 'low' | 'medium' | 'high';
   confidence?: number;
   metadata?: Record<string, any>;
+  acknowledged?: boolean;
+  acknowledgedAt?: Date;
+  acknowledgedBy?: string;
 }
 
 // Video streaming related types

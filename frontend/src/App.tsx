@@ -1,6 +1,7 @@
 
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { Toaster } from './components/ui/sonner';
 import { AuthPage } from './components/auth/AuthPage';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { CandidateDashboard } from './components/dashboard/CandidateDashboard';
@@ -36,11 +37,12 @@ function App() {
             {/* Default redirect */}
             <Route path="/" element={<Navigate to="/auth" replace />} />
             
-            {/* Catch all route */}
-            <Route path="*" element={<Navigate to="/auth" replace />} />
-          </Routes>
-        </div>
-      </Router>
+          {/* Catch all route */}
+          <Route path="*" element={<Navigate to="/auth" replace />} />
+        </Routes>
+      </div>
+      <Toaster duration={2000} />
+    </Router>
     </AuthProvider>
   );
 }
