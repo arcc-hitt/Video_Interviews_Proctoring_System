@@ -127,7 +127,7 @@ router.get('/:sessionId',
         eventType, 
         startDate, 
         endDate 
-      } = req.query as any;
+      } = (req as any).validatedQuery;
 
       // Verify session exists
       const session = await InterviewSession.findOne({ sessionId });
@@ -341,7 +341,7 @@ router.get('/candidate/:candidateId',
         eventType, 
         startDate, 
         endDate 
-      } = req.query as any;
+      } = (req as any).validatedQuery;
 
       // Build query filters
       const filters: any = { candidateId };

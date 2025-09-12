@@ -154,9 +154,19 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
 
       if (response.ok) {
         const data = await response.json();
+        console.log('Detection events API response:', data); // Debug log
         if (data.success) {
-          setDetectionEvents(data.data || []);
+          // Handle paginated response structure
+          const events = data.data?.items || data.data || [];
+          console.log('Parsed events:', events); // Debug log
+          setDetectionEvents(Array.isArray(events) ? events : []);
+        } else {
+          console.warn('API returned success=false:', data);
+          setDetectionEvents([]);
         }
+      } else {
+        console.error('API request failed with status:', response.status);
+        setDetectionEvents([]);
       }
     } catch (err) {
       console.error('Failed to fetch detection events:', err);
@@ -672,7 +682,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                   <h3 className="text-lg font-medium text-gray-900">Recent Events</h3>
                 </div>
                 <div className="p-6">
-                  {detectionEvents.length === 0 ? (
+                  {!Array.isArray(detectionEvents) || detectionEvents.length === 0 ? (
                     <div className="text-center py-8">
                       <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
                       <p className="text-gray-500">No suspicious events detected</p>
@@ -728,7 +738,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
               </div>
               
               <div className="p-6">
-                {detectionEvents.length === 0 ? (
+                {!Array.isArray(detectionEvents) || detectionEvents.length === 0 ? (
                   <div className="text-center py-8">
                     <Timeline className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-gray-500">No events to display</p>

@@ -298,7 +298,19 @@ export const validateZod = (schema: z.ZodTypeAny, property: 'body' | 'query' | '
     
     try {
       const validatedData = schema.parse(data);
-      req[property] = validatedData;
+      
+      // Handle different property types appropriately
+      if (property === 'query') {
+        // Create validated query object and extend req with it
+        (req as any).validatedQuery = validatedData;
+      } else if (property === 'params') {
+        // Create validated params object and extend req with it
+        (req as any).validatedParams = validatedData;
+      } else {
+        // Body can be directly assigned
+        req[property] = validatedData;
+      }
+      
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
