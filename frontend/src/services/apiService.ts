@@ -19,19 +19,9 @@ class ApiService {
   private onUnauthorized?: () => void;
 
   constructor() {
-    // In production, use relative URLs to leverage Vercel proxy
-    // In development, use environment variable or localhost
-    this.baseURL = import.meta.env.PROD 
-      ? '' // Use relative URLs in production (Vercel will proxy to Railway)
-      : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000');
-    
-    console.log('🔧 API Service initialized with baseURL:', this.baseURL);
-    console.log('🔧 Environment variables:', {
-      VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
-      VITE_WS_URL: import.meta.env.VITE_WS_URL,
-      MODE: import.meta.env.MODE,
-      PROD: import.meta.env.PROD
-    });
+    // Ensure VITE_API_BASE_URL is treated as a string
+    const viteApiUrl = String(import.meta.env.VITE_API_BASE_URL);
+    this.baseURL = viteApiUrl || 'http://localhost:5000';
     // Set up global error handling for 401 responses
     this.setupResponseInterceptor();
   }
