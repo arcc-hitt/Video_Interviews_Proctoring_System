@@ -140,7 +140,8 @@ export const InterviewerDashboard: React.FC = () => {
       socketRef.current = null;
     }
 
-    const socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000', {
+    const socketUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+    const socket = io(socketUrl, {
       auth: {
         token: authState.token
       },
