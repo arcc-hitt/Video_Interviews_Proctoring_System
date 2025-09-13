@@ -279,7 +279,6 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
 
     // Clean up existing service first
     if (serviceRef.current) {
-      console.log('[useAlertStreaming] Cleaning up existing service');
       serviceRef.current.destroy();
     }
 

@@ -99,8 +99,6 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
 
   // Handle detection events
   function handleDetectionEvent(event: DetectionEvent) {
-    console.log('Detection event detected:', event);
-    
     // Send event to backend API for storage
     sendEventToBackend(event);
     
@@ -116,9 +114,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
         metadata: event.metadata
       };
       
-      console.log('Sending detection event via WebSocket:', wsPayload);
       wsRef.current.emit('detection_event', wsPayload);
-      console.log('Detection event broadcasted via WebSocket:', event.eventType);
     } else {
       console.warn('WebSocket not connected, detection event not broadcasted. WebSocket state:', {
         connected: wsRef.current?.connected,
@@ -150,7 +146,6 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       }
 
       await apiService.post('/api/events', event);
-      console.log('Successfully sent detection event to backend');
     } catch (error) {
       console.error('Failed to send event to backend:', error);
     }
@@ -158,9 +153,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
 
   // Initialize session
   const initializeSession = useCallback(async () => {
-    console.log('CandidateInterface: initializeSession called');
     if (!authState.isAuthenticated || !authState.user) {
-      console.log('CandidateInterface: User not authenticated');
       setSessionState(prev => ({
         ...prev,
         error: 'User not authenticated'
@@ -169,15 +162,11 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     }
 
     setSessionState(prev => ({ ...prev, isInitializing: true, error: null }));
-    console.log('CandidateInterface: Starting session initialization...');
-
     try {
       let sessionId = propSessionId;
-      console.log('CandidateInterface: Using sessionId:', sessionId);
 
       // If no session ID provided, check for existing active session or create new one
       if (!sessionId) {
-        console.log('CandidateInterface: No session ID provided');
         // For candidates, we might need to join an existing session
         // This would typically be handled by the interviewer creating the session
         // and providing the session ID to the candidate
@@ -190,28 +179,23 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       }
 
       // Fetch session details
-      console.log('CandidateInterface: Fetching session details for:', sessionId);
       
       // First, try to join the session as a candidate
       // This will update the session's candidateId to match the current user
       try {
-        const joinResponse = await apiService.post(`/api/sessions/${sessionId}/join`);
-        console.log('Successfully joined session:', joinResponse);
+        await apiService.post(`/api/sessions/${sessionId}/join`);
       } catch (joinError) {
-        console.log('Could not join session (may already be joined):', joinError);
         // Continue anyway - the user might already be in the session or this might be an interviewer
       }
       
       // Now fetch the session details
       const sessionData = await apiService.get(`/api/sessions/${sessionId}`);
-      console.log('CandidateInterface: Session data received:', sessionData);
       
       if (!sessionData.success) {
         throw new Error(sessionData.error || 'Failed to fetch session');
       }
 
       const session: InterviewSession = sessionData.data;
-      console.log('CandidateInterface: Session initialized successfully:', session);
 
       setSessionState({
         session,
@@ -262,20 +246,16 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     };
 
     pc.onconnectionstatechange = () => {
-      console.log('Peer connection state:', pc.connectionState);
-      
       // Handle connection failures
       if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        console.log('Peer connection failed/disconnected, will recreate on next stream start');
+        // Connection failed/disconnected, will recreate on next stream start
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log('ICE connection state:', pc.iceConnectionState);
-      
       // Handle ICE connection failures
       if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-        console.log('ICE connection failed/disconnected');
+        // ICE connection failed/disconnected
       }
     };
 
@@ -284,8 +264,6 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   }, [sessionState.session]);
 
   const handleVideoOffer = async (data: any) => {
-    console.log('Received video offer from interviewer');
-    
     if (!peerConnectionRef.current) {
       setupPeerConnection();
     }
@@ -323,22 +301,11 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   };
 
   const startVideoStream = async (stream: MediaStream) => {
-    console.log('🎥▶️ Starting video stream to interviewer');
-    console.log('🎥📊 Stream details:', {
-      id: stream.id,
-      active: stream.active,
-      videoTracks: stream.getVideoTracks().length,
-      audioTracks: stream.getAudioTracks().length
-    });
-    
     localStreamRef.current = stream;
 
     if (wsRef.current && sessionState.session) {
-      console.log('📡 WebSocket available, setting up peer connection...');
-      
       // Clean up existing peer connection if it exists
       if (peerConnectionRef.current) {
-        console.log('🧹 Cleaning up existing peer connection before creating new one');
         peerConnectionRef.current.close();
         peerConnectionRef.current = null;
       }
@@ -348,23 +315,12 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       
       // Add stream to peer connection
       stream.getTracks().forEach(track => {
-        console.log('➕ Adding track to peer connection:', {
-          kind: track.kind,
-          enabled: track.enabled,
-          readyState: track.readyState
-        });
         pc.addTrack(track, stream);
       });
 
       // Create and send offer to interviewer
-      console.log('📞 Creating WebRTC offer...');
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
-      console.log('📤 Sending video offer to interviewer via WebSocket:', {
-        sessionId: sessionState.session.sessionId,
-        offerType: offer.type
-      });
 
       wsRef.current.emit('video_stream_offer', {
         sessionId: sessionState.session.sessionId,
@@ -372,9 +328,8 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
         offer: offer
       });
       
-      console.log('✅ Video offer sent to interviewer');
     } else {
-      console.log('❌ Cannot start video stream: missing WebSocket or session', {
+      console.warn('Cannot start video stream: missing WebSocket or session', {
         hasWebSocket: !!wsRef.current,
         hasSession: !!sessionState.session
       });
@@ -395,7 +350,6 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       });
 
       socket.on('connect', () => {
-        console.log('Socket.IO connected');
         wsRef.current = socket as any; // Store socket reference for compatibility
         
         // Join session as candidate
@@ -406,12 +360,11 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       });
 
       socket.on('disconnect', () => {
-        console.log('Socket.IO disconnected');
         wsRef.current = null;
       });
 
-      socket.on('session_joined', (data) => {
-        console.log('Joined session:', data);
+      socket.on('session_joined', () => {
+        // Session joined successfully
       });
 
       socket.on('session_status_update', (data) => {
@@ -511,29 +464,20 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
         break;
       case 'session_status_update':
         // Handle session status updates from interviewer
-        console.log('CandidateInterface: Received session_status_update:', message.data);
-        console.log('CandidateInterface: Current sessionControls.isSessionActive:', sessionControls.isSessionActive);
-        console.log('CandidateInterface: Current sessionState.isSessionActive:', sessionState.isSessionActive);
-        console.log('CandidateInterface: isLeavingRef.current:', isLeavingRef.current);
-        
         if (message.data && (message.data.status === 'completed' || message.data.status === 'terminated')) {
           // Check if we're already in the process of leaving to avoid duplicates
           if (isLeavingRef.current) {
-            console.log('CandidateInterface: Already in process of leaving, ignoring duplicate message');
             break;
           }
           
-          console.log('CandidateInterface: Processing session end/termination');
           isLeavingRef.current = true; // Mark that we're starting the leave process
           
           if (message.data.status === 'completed') {
-            console.log('CandidateInterface: Session completed, showing notification and redirecting');
             showNotification(
               'Interview session has been completed by the interviewer. You will be redirected to the dashboard.',
               'info'
             );
           } else if (message.data.status === 'terminated') {
-            console.log('CandidateInterface: Session terminated, showing notification and redirecting');
             showNotification(
               'Interview session has been terminated by the interviewer. You will be redirected to the dashboard.',
               'warning'
@@ -541,28 +485,23 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
           }
           
           setTimeout(() => {
-            console.log('CandidateInterface: Timeout reached, calling leaveInterview');
             leaveInterview();
           }, 3000);
         }
         break;
       case 'interviewer_message':
         // Handle messages from interviewer if needed
-        console.log('Message from interviewer:', message.data);
         break;
       default:
-        console.log('Unknown WebSocket message:', message);
+        // Unknown message type
+        break;
     }
   };
 
   // Leave interview (candidate can only leave, not control session)
   const leaveInterview = async () => {
-    console.log('CandidateInterface: leaveInterview called');
-    console.log('CandidateInterface: sessionState.session exists:', !!sessionState.session);
-    
     // Always proceed with cleanup and callback, even if session is null
     try {
-      console.log('CandidateInterface: Starting cleanup process');
       
       // Cleanup resources
       cleanupFaceDetection();
@@ -609,16 +548,8 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       // Reset the leaving flag
       isLeavingRef.current = false;
 
-      console.log('CandidateInterface: Calling onSessionEnd callback');
-      console.log('CandidateInterface: onSessionEnd type:', typeof onSessionEnd);
-      console.log('CandidateInterface: onSessionEnd exists:', !!onSessionEnd);
-      
       if (onSessionEnd) {
-        console.log('CandidateInterface: Executing onSessionEnd callback...');
         onSessionEnd();
-        console.log('CandidateInterface: onSessionEnd callback executed');
-      } else {
-        console.log('CandidateInterface: onSessionEnd callback is not available');
       }
 
     } catch (error) {
@@ -658,9 +589,6 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
           frameRate: Math.round(1000 / Math.max(processingTime, 16.67)) // Cap at 60 FPS
         }));
         
-        if (processingTime > 100) { // Log if processing takes more than 100ms
-          console.log(`Frame processing took ${processingTime.toFixed(2)}ms`);
-        }
       } catch (error) {
         console.error('Critical error processing frame:', error);
         // Don't stop the entire system for processing errors
@@ -670,12 +598,10 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
 
   // Memoized callbacks for VideoStreamComponent
   const handleStreamStart = useCallback((stream: MediaStream) => {
-    console.log('Video stream started, setting up WebRTC');
     startVideoStream(stream);
   }, [startVideoStream]);
 
   const handleStreamStop = useCallback(() => {
-    console.log('Video stream stopped, cleaning up WebRTC');
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -686,11 +612,9 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   }, []);
 
   const handleRecordingStart = useCallback(() => {
-    console.log('Recording started');
   }, []);
 
   const handleRecordingStop = useCallback(() => {
-    console.log('Recording stopped');
   }, []);
 
   const handleVideoError = useCallback((error: any) => {
@@ -699,12 +623,10 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
 
   // Initialize session on mount
   useEffect(() => {
-    console.log('CandidateInterface: Component mounted with sessionId:', propSessionId);
     initializeSession();
 
     // Cleanup on unmount - but don't call onSessionEnd during cleanup
     return () => {
-      console.log('CandidateInterface: Component unmounting, cleaning up...');
       cleanupFaceDetection();
       cleanupComputerVision();
       

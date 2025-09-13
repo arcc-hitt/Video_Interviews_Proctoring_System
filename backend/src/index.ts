@@ -87,7 +87,6 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 async function startServer() {
   try {
     // Connect to database
-    console.log('Connecting to database...');
     await connectToDatabase();
     
     // Create HTTP server
@@ -100,8 +99,6 @@ async function startServer() {
     // Start server
     server.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
-      console.log(`Health check available at http://localhost:${PORT}/health`);
-      console.log(`WebSocket server initialized`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

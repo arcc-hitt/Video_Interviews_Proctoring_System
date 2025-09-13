@@ -83,15 +83,7 @@ export class WebSocketService {
   }
 
   private setupEventHandlers(): void {
-    console.log('🔧 Setting up WebSocket event handlers...');
-    
     this.io.on('connection', (socket: Socket) => {
-      console.log('🔌 New WebSocket connection:', {
-        socketId: socket.id,
-        userId: socket.data.user?.userId,
-        userRole: socket.data.user?.role
-      });
-      
       this.userSockets.set(socket.data.user.userId, socket);
 
       // Handle session joining
@@ -281,7 +273,6 @@ export class WebSocketService {
         });
       }
 
-      console.log(`User ${userId} left session ${sessionId}`);
     } catch (error) {
       console.error('Error leaving session:', error);
     }
@@ -291,13 +282,6 @@ export class WebSocketService {
     try {
       const { sessionId, eventType, candidateId, timestamp, confidence, metadata } = payload;
       
-      console.log(`[WebSocket] Detection event received from ${socket.data.user.userId}:`, {
-        sessionId,
-        eventType,
-        candidateId,
-        confidence
-      });
-      
       // Validate session exists
       const activeSession = this.activeSessions.get(sessionId);
       if (!activeSession) {
@@ -305,8 +289,6 @@ export class WebSocketService {
         this.emitError(socket, 'SESSION_NOT_FOUND', 'Session not found');
         return;
       }
-
-      console.log(`[WebSocket] Session ${sessionId} has ${activeSession.interviewers.size} interviewers connected`);
 
       // Create enhanced alert payload for interviewers
       const alertPayload = {
@@ -326,8 +308,6 @@ export class WebSocketService {
         type: eventType
       };
 
-      console.log(`[WebSocket] Created alert payload:`, alertPayload);
-
       // Broadcast detection event to all users in session
       socket.to(sessionId).emit(WebSocketEventType.DETECTION_EVENT_BROADCAST, payload);
       
@@ -336,7 +316,6 @@ export class WebSocketService {
       activeSession.interviewers.forEach((interviewer, interviewerId) => {
         const interviewerSocket = this.userSockets.get(interviewerId);
         if (interviewerSocket) {
-          console.log(`[WebSocket] Sending alert to interviewer ${interviewerId}`);
           interviewerSocket.emit('alert', alertPayload);
           alertsSent++;
         } else {
@@ -344,12 +323,9 @@ export class WebSocketService {
         }
       });
       
-      console.log(`[WebSocket] Sent alerts to ${alertsSent} interviewers for session ${sessionId}`);
-      
       // Update session activity
       activeSession.lastActivity = new Date();
       
-      console.log(`[WebSocket] Detection event processed successfully for session ${sessionId}:`, eventType);
     } catch (error) {
       console.error('[WebSocket] Error handling detection event:', error);
       this.emitError(socket, 'DETECTION_EVENT_ERROR', 'Failed to process detection event');
@@ -408,7 +384,6 @@ export class WebSocketService {
       // Broadcast to all users in the session
       this.io.to(sessionId).emit(WebSocketEventType.MANUAL_FLAG_BROADCAST, payload);
       
-      console.log(`Manual flag created by ${userId} for session ${sessionId}`);
     } catch (error) {
       console.error('Error handling manual flag:', error);
       this.emitError(socket, 'MANUAL_FLAG_ERROR', 'Failed to create manual flag');
@@ -419,13 +394,6 @@ export class WebSocketService {
     try {
       const { sessionId } = payload;
       const userId = socket.data.user.userId;
-      
-      console.log('🎥▶️ Video stream start event:', {
-        sessionId,
-        userId,
-        userRole: socket.data.user.role,
-        payload
-      });
       
       // Broadcast to other users in the session
       socket.to(sessionId).emit(WebSocketEventType.VIDEO_STREAM_START, payload);
@@ -442,7 +410,6 @@ export class WebSocketService {
       // Broadcast to other users in the session
       socket.to(sessionId).emit(WebSocketEventType.VIDEO_STREAM_STOP, { sessionId, userId });
       
-      console.log(`Video stream stopped for session ${sessionId}`);
     } catch (error) {
       console.error('Error handling video stream stop:', error);
     }
@@ -452,13 +419,6 @@ export class WebSocketService {
     try {
       const { sessionId } = payload;
       const userId = socket.data.user.userId;
-      
-      console.log('🎥📊 Video stream data received:', {
-        sessionId,
-        userId,
-        dataSize: payload.data?.length || 0,
-        timestamp: payload.timestamp
-      });
       
       // Broadcast to interviewers in the session (candidates don't need to see other candidate streams)
       const activeSession = this.activeSessions.get(sessionId);
@@ -473,7 +433,7 @@ export class WebSocketService {
         });
         
       } else {
-        console.log(`No active session found for ${sessionId}`);
+        // No active session found - silent continue
       }
     } catch (error) {
       console.error('Error handling video stream data:', error);
@@ -484,14 +444,6 @@ export class WebSocketService {
     try {
       const { sessionId, toUserId } = payload;
       const fromUserId = socket.data.user.userId;
-      
-      console.log('🎥📞 WebRTC offer received:', {
-        sessionId,
-        fromUserId,
-        fromRole: socket.data.user.role,
-        toUserId,
-        offerType: payload.offer?.type
-      });
       
       // If toUserId is 'interviewer', broadcast to all interviewers in the session
       if (toUserId === 'interviewer') {
@@ -509,7 +461,7 @@ export class WebSocketService {
             }
           });
         } else {
-          console.log(`No active session found for offer: ${sessionId}`);
+          // No active session found - silent continue
         }
       } else {
         // Direct message to specific user
@@ -520,7 +472,7 @@ export class WebSocketService {
             fromUserId
           });
         } else {
-          console.log(`Target user ${toUserId} not found for offer`);
+          // Target user not found - silent continue;
         }
       }
     } catch (error) {
@@ -541,7 +493,7 @@ export class WebSocketService {
           fromUserId
         });
       } else {
-        console.log(`Target user ${toUserId} not found for answer`);
+        // Target user not found - silent continue
       }
     } catch (error) {
       console.error('Error handling video stream answer:', error);
@@ -598,7 +550,6 @@ export class WebSocketService {
       // Broadcast to all users in the session
       this.io.to(sessionId).emit(WebSocketEventType.SESSION_STATUS_UPDATE, payload);
       
-      console.log(`Session ${sessionId} status updated to ${status} by ${userId}`);
     } catch (error) {
       console.error('Error handling session status update:', error);
       this.emitError(socket, 'SESSION_UPDATE_ERROR', 'Failed to update session status');
@@ -649,8 +600,6 @@ export class WebSocketService {
 
       this.io.to(sessionId).emit(WebSocketEventType.SESSION_CONTROL_UPDATE, controlUpdate);
       
-      console.log(`Session control: ${action} for session ${sessionId} by interviewer ${userId}`);
-
     } catch (error) {
       console.error('Error handling interviewer session control:', error);
       this.emitError(socket, 'INTERNAL_ERROR', 'Failed to process session control');
@@ -692,8 +641,6 @@ export class WebSocketService {
 
       this.io.to(sessionId).emit(WebSocketEventType.SESSION_CONTROL_UPDATE, controlUpdate);
       
-      console.log(`Recording control: ${action} for session ${sessionId} by interviewer ${userId}`);
-
     } catch (error) {
       console.error('Error handling interviewer recording control:', error);
       this.emitError(socket, 'INTERNAL_ERROR', 'Failed to process recording control');
@@ -707,8 +654,6 @@ export class WebSocketService {
       
       if (!userId) return;
 
-      console.log(`User disconnected: ${userId}`);
-      
       // Remove from user sockets map
       this.userSockets.delete(userId);
 

@@ -60,9 +60,6 @@ router.post('/create', authenticate, async (req, res): Promise<void> => {
     
     if (candidateUser) {
       candidateId = candidateUser.userId;
-      console.log('Found existing candidate user:', candidateUser.email, 'with ID:', candidateId);
-    } else {
-      console.log('No existing candidate found for email:', candidateEmail, 'using generated ID:', candidateId);
     }
 
     // Create new session
@@ -77,14 +74,6 @@ router.post('/create', authenticate, async (req, res): Promise<void> => {
 
     await session.save();
     
-    console.log('Session created:', { 
-      sessionId, 
-      candidateId, 
-      candidateName, 
-      candidateEmail,
-      hasExistingUser: !!candidateUser 
-    });
-
     const response: ApiResponse = {
       success: true,
       data: {
@@ -197,13 +186,6 @@ router.post('/:sessionId/join', authenticate, async (req, res): Promise<void> =>
     session.candidateId = req.user.userId;
     await session.save();
     
-    console.log('Candidate joined session:', {
-      sessionId,
-      previousCandidateId,
-      newCandidateId: req.user.userId,
-      candidateEmail: req.user.email
-    });
-
     // Broadcast that candidate joined via WebSocket
     if (wsService && sessionId) {
       wsService.broadcastToSession(sessionId, 'candidate_joined', {
