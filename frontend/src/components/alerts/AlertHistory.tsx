@@ -240,9 +240,9 @@ export const AlertHistory: React.FC<AlertHistoryProps> = ({
         </div>
       }
     >
-      <div className={`bg-white rounded-lg shadow-sm border ${className}`}>
+      <div className={`bg-white rounded-lg shadow-sm border h-full flex flex-col ${className}`}>
       {/* Header */}
-      <div className="p-4 border-b border-gray-200">
+      <div className="p-4 border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
             <Clock className="w-5 h-5 text-blue-500" />
@@ -342,7 +342,7 @@ export const AlertHistory: React.FC<AlertHistoryProps> = ({
       </div>
 
       {/* History List */}
-      <div className="max-h-96 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {sortedEntries.length === 0 ? (
           <div className="p-6 text-center">
             <AlertTriangle className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -404,7 +404,7 @@ export const AlertHistory: React.FC<AlertHistoryProps> = ({
 
       {/* Footer */}
       {sortedEntries.length > 0 && (
-        <div className="p-3 bg-gray-50 border-t border-gray-200">
+        <div className="p-3 bg-gray-50 border-t border-gray-200 flex-shrink-0">
           <div className="flex items-center justify-between text-xs text-gray-600">
             <span>
               Showing {sortedEntries.length} of {historyEntries.length} alert entries

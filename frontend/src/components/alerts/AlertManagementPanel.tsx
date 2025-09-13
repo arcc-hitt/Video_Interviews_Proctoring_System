@@ -3,7 +3,6 @@ import type { Alert } from '../../types';
 import { AlertTriangle, Flag, CheckCircle, History, Plus, FileText, Eye, X, Users, Smartphone } from 'lucide-react';
 import { AlertHistory } from './AlertHistory';
 import { safeFormatTime } from '../../utils/dateUtils';
-import { ErrorBoundary } from '../error/ErrorBoundary';
 
 interface AlertManagementPanelProps {
   alerts: Alert[];
@@ -104,9 +103,9 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
   };
 
   return (
-    <div className={`bg-white rounded-lg shadow-sm border w-full max-w-full overflow-hidden ${className}`}>
+    <div className={`bg-white rounded-lg shadow-sm border w-full max-w-full flex flex-col h-full min-h-[500px] max-h-[900px] overflow-hidden ${className}`}>
       {/* Header with Tabs */}
-      <div className="p-4 border-b border-gray-200">
+      <div className="p-4 border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center justify-between mb-4 min-w-0">
           <div className="flex items-center space-x-2 min-w-0 flex-1">
             <AlertTriangle className="w-5 h-5 text-orange-500 flex-shrink-0" />
@@ -182,7 +181,7 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
 
       {/* Manual Flag Form */}
       {showManualFlagForm && (
-        <div className="p-4 bg-gray-50 border-b border-gray-200 overflow-hidden">
+        <div className="p-4 bg-gray-50 border-b border-gray-200 overflow-hidden flex-shrink-0">
           <div className="space-y-3">
             <textarea
               value={manualFlagText}
@@ -223,10 +222,10 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
       )}
 
       {/* Content Area */}
-      <div className="p-4 overflow-hidden">
+      <div className="flex-1 p-4 overflow-hidden">
         {/* Live Alerts View */}
         {viewMode === 'live' && (
-          <div className="space-y-3 max-h-96 overflow-y-auto overflow-x-hidden">
+          <div className="space-y-3 h-full min-h-[300px] max-h-[700px] overflow-y-auto overflow-x-hidden">
             {(() => {
               // Filter to show only unacknowledged alerts in live view
               const unacknowledgedAlerts = alerts.filter(alert => 
@@ -242,10 +241,10 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
                 );
               }
               
-              return unacknowledgedAlerts.slice(0, 10).map((alert, index) => (
+              return unacknowledgedAlerts.map((alert, index) => (
                 <div
                   key={`${alert.type}-${index}`}
-                  className="flex items-start justify-between p-3 bg-gray-50 rounded-md"
+                  className="flex items-start justify-between p-3 bg-gray-50 rounded-md shadow-sm"
                 >
                   <div className="flex items-start space-x-3 flex-1 min-w-0">
                     <div className="flex items-center justify-center w-5 h-5 mt-0.5">
@@ -261,7 +260,7 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
                           {alert.severity?.toUpperCase() || 'UNKNOWN'}
                         </span>
                         <span className="text-xs text-gray-500 flex-shrink-0">
-                          {formatTime(alert.timestamp)}
+                          {safeFormatTime(alert.timestamp)}
                         </span>
                       </div>
                       
@@ -290,16 +289,18 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
 
         {/* History View */}
         {viewMode === 'history' && (
-          <AlertHistory
-            sessionId={sessionId || ''}
-            alerts={alerts}
-            className="border-0 shadow-none"
-          />
+          <div className="h-full min-h-[300px] max-h-[700px] overflow-hidden">
+            <AlertHistory
+              sessionId={sessionId || ''}
+              alerts={alerts}
+              className="border-0 shadow-none h-full"
+            />
+          </div>
         )}
 
         {/* Notes View */}
         {viewMode === 'notes' && (
-          <div className="space-y-3 max-h-96 overflow-y-scroll overflow-x-hidden">
+          <div className="space-y-3 h-full min-h-[300px] max-h-[700px] overflow-y-auto overflow-x-hidden">
             {sessionNotes.length === 0 ? (
               <div className="text-center py-8">
                 <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -329,7 +330,7 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 rounded-b-lg overflow-hidden">
+      <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 rounded-b-lg overflow-hidden flex-shrink-0">
         <div className="flex items-center justify-between text-xs text-gray-600 min-w-0">
           <span className="truncate flex-1">
             {viewMode === 'live' 
@@ -343,6 +344,5 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
         </div>
       </div>
     </div>
-    </ErrorBoundary>
   );
 };
