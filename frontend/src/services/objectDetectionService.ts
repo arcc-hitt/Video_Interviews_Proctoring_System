@@ -57,23 +57,18 @@ export class TensorFlowObjectDetectionService implements ObjectDetectionService 
     try {
       // Initialize TensorFlow.js backend
       await tf.ready();
-      console.log('TensorFlow.js backend ready');
-      
-      console.log('Loading COCO-SSD model...');
       
       // Load COCO-SSD model with fallback handling
       try {
         this.model = await cocoSsd.load({
           base: 'lite_mobilenet_v2', // Use lighter model for better performance
         });
-        console.log('COCO-SSD model loaded successfully');
       } catch (modelError) {
         console.warn('Failed to load COCO-SSD model, trying fallback:', modelError);
         
         // Try alternative model loading approach
         try {
           this.model = await cocoSsd.load();
-          console.log('COCO-SSD fallback model loaded successfully');
         } catch (fallbackError) {
           console.error('All model loading attempts failed:', fallbackError);
           this.model = null;
@@ -87,12 +82,6 @@ export class TensorFlowObjectDetectionService implements ObjectDetectionService 
       }
 
       this.isInitialized = true;
-      
-      if (this.model) {
-        console.log('Object detection model initialized successfully');
-      } else {
-        console.log('Object detection service initialized in fallback mode (no model available)');
-      }
     } catch (error) {
       console.error('Failed to initialize object detection service:', error);
       // Don't throw error - allow service to work in fallback mode
@@ -103,7 +92,6 @@ export class TensorFlowObjectDetectionService implements ObjectDetectionService 
       if (this.onModelLoadError) {
         this.onModelLoadError(errorMessage);
       }
-      console.log('Object detection service initialized in fallback mode due to error');
     }
   }
 

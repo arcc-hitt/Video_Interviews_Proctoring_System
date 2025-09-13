@@ -11,6 +11,8 @@ interface UseFaceDetectionOptions {
 
 interface UseFaceDetectionReturn {
   isInitialized: boolean;
+  isWarmingUp: boolean;
+  warmupProgress: { current: number; total: number; percentage: number } | null;
   currentFocusStatus: FocusStatus | null;
   processFrame: (imageData: ImageData) => Promise<void>;
   cleanup: () => void;
@@ -25,13 +27,13 @@ export const useFaceDetection = ({
 }: UseFaceDetectionOptions = {}): UseFaceDetectionReturn => {
   const serviceRef = useRef<BlazeFaceDetectionService | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isWarmingUp, setIsWarmingUp] = useState(true);
+  const [warmupProgress, setWarmupProgress] = useState<{ current: number; total: number; percentage: number } | null>(null);
   const [currentFocusStatus, setCurrentFocusStatus] = useState<FocusStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Handle focus events from the detection service
   const handleFocusEvent = useCallback((focusEvent: FocusEvent) => {
-    console.log('Focus event detected:', focusEvent);
-
     if (onDetectionEvent && sessionId && candidateId) {
       // Create proper metadata structure according to shared types
       const metadata: Record<string, any> = {
@@ -64,8 +66,8 @@ export const useFaceDetection = ({
         case 'focus-loss':
           description = 'Candidate looking away from screen';
           break;
-        case 'focus-restored':
-          description = 'Candidate attention restored';
+        case 'face-visible':
+          description = 'Candidate face is now visible';
           break;
         default:
           description = `Focus tracking event: ${focusEvent.type}`;
@@ -109,7 +111,6 @@ export const useFaceDetection = ({
         serviceRef.current = service;
         setIsInitialized(service.getIsInitialized());
         setError(null);
-        console.log('BlazeFace detection service initialized successfully');
       } catch (error) {
         console.error('Failed to initialize BlazeFace detection service:', error);
         setError(error instanceof Error ? error.message : 'Face detection initialization failed');
@@ -128,6 +129,10 @@ export const useFaceDetection = ({
 
     try {
       const result = await serviceRef.current.detectFace(imageData);
+      
+      // Update warmup status
+      setIsWarmingUp(serviceRef.current.getIsWarmingUp());
+      setWarmupProgress(serviceRef.current.getWarmupProgress());
       
       // Update current focus status if we have faces
       if (result.faces.length > 0) {
@@ -158,9 +163,10 @@ export const useFaceDetection = ({
       serviceRef.current = null;
     }
     setIsInitialized(false);
+    setIsWarmingUp(true);
+    setWarmupProgress(null);
     setCurrentFocusStatus(null);
     setError(null);
-    console.log('Face detection service cleaned up');
   }, []);
 
   // Cleanup on unmount
@@ -172,6 +178,8 @@ export const useFaceDetection = ({
 
   return {
     isInitialized,
+    isWarmingUp,
+    warmupProgress,
     currentFocusStatus,
     processFrame,
     cleanup,

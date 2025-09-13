@@ -3,7 +3,7 @@
 export interface DetectionEvent {
   sessionId: string;
   candidateId: string;
-  eventType: 'focus-loss' | 'absence' | 'multiple-faces' | 'unauthorized-item' | 'manual_flag' | 'inactivity' | 'long_session' | 'heartbeat' | 'drowsiness' | 'eye-closure' | 'excessive-blinking' | 'background-voice' | 'multiple-voices' | 'excessive-noise' | string;
+  eventType: 'focus-loss' | 'absence' | 'face-visible' | 'multiple-faces' | 'unauthorized-item' | 'manual_flag' | 'inactivity' | 'long_session' | 'heartbeat' | 'drowsiness' | 'eye-closure' | 'excessive-blinking' | 'background-voice' | 'multiple-voices' | 'excessive-noise' | string;
   timestamp: Date;
   duration?: number;
   confidence: number;
@@ -132,7 +132,7 @@ export interface FocusStatus {
 }
 
 export interface FocusEvent {
-  type: 'focus-loss' | 'absence' | 'multiple-faces' | 'focus-restored' | 'presence-restored';
+  type: 'focus-loss' | 'absence' | 'face-visible' | 'multiple-faces';
   timestamp: Date;
   duration?: number;
   confidence: number;

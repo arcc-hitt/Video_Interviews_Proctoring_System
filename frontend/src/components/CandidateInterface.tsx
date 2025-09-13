@@ -134,6 +134,8 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       showNotification('Multiple faces detected. Please ensure only you are visible', 'warning', 5000);
     } else if (event.eventType === 'focus-loss') {
       showNotification('Please look at the screen during the interview', 'info', 3000);
+    } else if (event.eventType === 'face-visible') {
+      showNotification('Great! Your face is now visible to the interviewer', 'success', 2000);
     } else if (event.eventType === 'unauthorized-item') {
       showNotification('Unauthorized item detected. Please remove any prohibited items', 'error', 7000);
     }
@@ -321,13 +323,22 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   };
 
   const startVideoStream = async (stream: MediaStream) => {
-    console.log('Starting video stream to interviewer');
+    console.log('🎥▶️ Starting video stream to interviewer');
+    console.log('🎥📊 Stream details:', {
+      id: stream.id,
+      active: stream.active,
+      videoTracks: stream.getVideoTracks().length,
+      audioTracks: stream.getAudioTracks().length
+    });
+    
     localStreamRef.current = stream;
 
     if (wsRef.current && sessionState.session) {
+      console.log('📡 WebSocket available, setting up peer connection...');
+      
       // Clean up existing peer connection if it exists
       if (peerConnectionRef.current) {
-        console.log('Cleaning up existing peer connection before creating new one');
+        console.log('🧹 Cleaning up existing peer connection before creating new one');
         peerConnectionRef.current.close();
         peerConnectionRef.current = null;
       }
@@ -337,12 +348,23 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       
       // Add stream to peer connection
       stream.getTracks().forEach(track => {
+        console.log('➕ Adding track to peer connection:', {
+          kind: track.kind,
+          enabled: track.enabled,
+          readyState: track.readyState
+        });
         pc.addTrack(track, stream);
       });
 
       // Create and send offer to interviewer
+      console.log('📞 Creating WebRTC offer...');
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+
+      console.log('📤 Sending video offer to interviewer via WebSocket:', {
+        sessionId: sessionState.session.sessionId,
+        offerType: offer.type
+      });
 
       wsRef.current.emit('video_stream_offer', {
         sessionId: sessionState.session.sessionId,
@@ -350,7 +372,12 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
         offer: offer
       });
       
-      console.log('Video offer sent to interviewer');
+      console.log('✅ Video offer sent to interviewer');
+    } else {
+      console.log('❌ Cannot start video stream: missing WebSocket or session', {
+        hasWebSocket: !!wsRef.current,
+        hasSession: !!sessionState.session
+      });
     }
   };
 

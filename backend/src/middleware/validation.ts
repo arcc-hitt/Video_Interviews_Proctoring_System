@@ -13,10 +13,20 @@ export const commonSchemas = {
   timestamp: Joi.date().iso().required(),
   confidence: Joi.number().min(0).max(1).required(),
   eventType: Joi.string().valid(
+    'focus-loss',
+    'absence',
+    'face-visible',
+    'multiple-faces',
+    'unauthorized-item',
+    'drowsiness',
+    'eye-closure',
+    'excessive-blinking',
+    'background-voice',
+    'multiple-voices',
+    'excessive-noise',
     'face_detection',
     'object_detection',
     'inactivity',
-    'unauthorized_item',
     'manual_flag',
     'session_start',
     'session_end',
@@ -327,11 +337,6 @@ export const validateZod = (schema: z.ZodTypeAny, property: 'body' | 'query' | '
           method: req.method,
           ip: req.ip,
           body: JSON.stringify(data, null, 2)
-        });
-
-        console.log('Zod Validation Error Details:', {
-          errors: validationErrors,
-          requestBody: data
         });
 
         throw new ValidationError('Validation failed');

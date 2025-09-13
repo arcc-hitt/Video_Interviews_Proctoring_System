@@ -42,8 +42,6 @@ export class FallbackDetectionService {
     this.sessionStartTime = new Date();
     this.lastActivityTime = new Date();
 
-    console.log('Starting fallback detection service');
-
     if (this.config.enablePeriodicChecks) {
       this.startPeriodicChecks(sessionId, candidateId);
     }
@@ -65,8 +63,6 @@ export class FallbackDetectionService {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
-
-    console.log('Stopped fallback detection service');
   }
 
   public createManualFlag(

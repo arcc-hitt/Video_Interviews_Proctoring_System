@@ -2,6 +2,8 @@ import React, { useState, useCallback } from 'react';
 import type { Alert } from '../../types';
 import { AlertTriangle, Flag, CheckCircle, History, Plus, FileText, Eye, X, Users, Smartphone } from 'lucide-react';
 import { AlertHistory } from './AlertHistory';
+import { safeFormatTime } from '../../utils/dateUtils';
+import { ErrorBoundary } from '../error/ErrorBoundary';
 
 interface AlertManagementPanelProps {
   alerts: Alert[];
@@ -80,15 +82,8 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
     }
   };
 
-  // Format timestamp
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-  };
+  // Format timestamp (replaced with safe utility function)
+  // Using safeFormatTime utility to prevent crashes
 
   // Get alert icon
   const getAlertIcon = (type: string) => {
@@ -321,7 +316,7 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium break-words">{note.note}</p>
                       <p className="text-xs mt-1 opacity-75">
-                        {formatTime(note.timestamp)}
+                        {safeFormatTime(note.timestamp)}
                       </p>
                     </div>
                     <Flag className="w-4 h-4 ml-2 opacity-60 flex-shrink-0" />
@@ -348,5 +343,6 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   );
 };

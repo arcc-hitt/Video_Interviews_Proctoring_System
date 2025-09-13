@@ -103,8 +103,9 @@ export class ReportService {
             const eventCounts = this.calculateEventCounts(detectionEvents);
             const suspiciousEvents = this.createSuspiciousEvents(detectionEvents);
 
-            // Calculate integrity score
+            // Calculate integrity score and detailed breakdown
             const integrityScore = this.calculateIntegrityScore(eventCounts, manualObservations);
+            const integrityBreakdown = this.calculateIntegrityScoreBreakdown(eventCounts, manualObservations);
 
             reportStatusMap.set(reportId, {
                 reportId,
@@ -126,7 +127,11 @@ export class ReportService {
                 unauthorizedItemsCount: eventCounts.unauthorizedItems,
                 integrityScore,
                 suspiciousEvents,
-                generatedAt: new Date()
+                generatedAt: new Date(),
+                // Add integrity breakdown to metadata
+                metadata: {
+                    integrityBreakdown
+                }
             });
 
             await report.save();
@@ -168,9 +173,22 @@ export class ReportService {
         // Include manual observations if they exist
         const manualObservations = await ManualObservation.findBySession(report.sessionId);
 
+        // Calculate integrity breakdown if not stored in metadata
+        let integrityBreakdown = report.metadata?.integrityBreakdown;
+        if (!integrityBreakdown) {
+            const eventCounts = {
+                focusLoss: report.focusLossCount,
+                absence: report.absenceCount,
+                multipleFaces: report.multipleFacesCount,
+                unauthorizedItems: report.unauthorizedItemsCount
+            };
+            integrityBreakdown = this.calculateIntegrityScoreBreakdown(eventCounts, manualObservations.map(obs => obs.toJSON()));
+        }
+
         return {
             ...report.toJSON(),
-            manualObservations: manualObservations.map(obs => obs.toJSON())
+            manualObservations: manualObservations.map(obs => obs.toJSON()),
+            integrityBreakdown
         };
     }
 
@@ -229,7 +247,7 @@ export class ReportService {
                 'Candidate Name': report.candidateName,
                 'Session ID': report.sessionId,
                 'Interview Duration (seconds)': report.interviewDuration,
-                'Integrity Score': report.integrityScore,
+                'Final Integrity Score': report.integrityScore,
                 'Focus Loss Count': report.focusLossCount,
                 'Absence Count': report.absenceCount,
                 'Multiple Faces Count': report.multipleFacesCount,
@@ -242,6 +260,27 @@ export class ReportService {
                 Flagged: ''
             });
 
+            // Add integrity score breakdown if available
+            if (report.integrityBreakdown) {
+                csvData.push({
+                    Type: 'Integrity Score Calculation',
+                    'Candidate Name': report.candidateName,
+                    'Session ID': report.sessionId,
+                    'Interview Duration (seconds)': '',
+                    'Final Integrity Score': `Formula: ${report.integrityBreakdown.formula}`,
+                    'Focus Loss Count': `Base Score: ${report.integrityBreakdown.baseScore}`,
+                    'Absence Count': `Focus Loss Deduction: -${report.integrityBreakdown.deductions.focusLoss}`,
+                    'Multiple Faces Count': `Absence Deduction: -${report.integrityBreakdown.deductions.absence}`,
+                    'Unauthorized Items Count': `Multiple Faces Deduction: -${report.integrityBreakdown.deductions.multipleFaces}`,
+                    'Generated At': `Unauthorized Items Deduction: -${report.integrityBreakdown.deductions.unauthorizedItems}`,
+                    Timestamp: `Manual Flags Deduction: -${report.integrityBreakdown.deductions.manualObservations}`,
+                    Description: `Total Deductions: -${report.integrityBreakdown.deductions.total}`,
+                    Severity: `Final Score: ${report.integrityBreakdown.finalScore}`,
+                    'Observation Type': '',
+                    Flagged: ''
+                });
+            }
+
             // Add suspicious events
             report.suspiciousEvents.forEach((event: SuspiciousEvent) => {
                 csvData.push({
@@ -249,7 +288,7 @@ export class ReportService {
                     'Candidate Name': report.candidateName,
                     'Session ID': report.sessionId,
                     'Interview Duration (seconds)': '',
-                    'Integrity Score': '',
+                    'Final Integrity Score': '',
                     'Focus Loss Count': '',
                     'Absence Count': '',
                     'Multiple Faces Count': '',
@@ -271,7 +310,7 @@ export class ReportService {
                         'Candidate Name': report.candidateName,
                         'Session ID': report.sessionId,
                         'Interview Duration (seconds)': '',
-                        'Integrity Score': '',
+                        'Final Integrity Score': '',
                         'Focus Loss Count': '',
                         'Absence Count': '',
                         'Multiple Faces Count': '',
@@ -442,6 +481,80 @@ export class ReportService {
     }
 
     /**
+     * Calculate detailed integrity score breakdown
+     */
+    private static calculateIntegrityScoreBreakdown(
+        eventCounts: { focusLoss: number; absence: number; multipleFaces: number; unauthorizedItems: number },
+        manualObservations: any[]
+    ): {
+        baseScore: number;
+        deductions: {
+            focusLoss: number;
+            absence: number;
+            multipleFaces: number;
+            unauthorizedItems: number;
+            manualObservations: number;
+            total: number;
+        };
+        finalScore: number;
+        formula: string;
+    } {
+        const baseScore = 100;
+        
+        // Calculate individual deductions
+        const focusLossDeduction = eventCounts.focusLoss * 2;
+        const absenceDeduction = eventCounts.absence * 5;
+        const multipleFacesDeduction = eventCounts.multipleFaces * 10;
+        const unauthorizedItemsDeduction = eventCounts.unauthorizedItems * 15;
+        
+        // Calculate manual observation deductions
+        const flaggedObservations = manualObservations.filter(obs => obs.flagged);
+        let manualObservationsDeduction = 0;
+        flaggedObservations.forEach(obs => {
+            switch (obs.severity) {
+                case 'low':
+                    manualObservationsDeduction += 2;
+                    break;
+                case 'medium':
+                    manualObservationsDeduction += 5;
+                    break;
+                case 'high':
+                    manualObservationsDeduction += 10;
+                    break;
+            }
+        });
+
+        const totalDeductions = focusLossDeduction + absenceDeduction + multipleFacesDeduction + unauthorizedItemsDeduction + manualObservationsDeduction;
+        const finalScore = Math.max(0, baseScore - totalDeductions);
+        
+        // Create readable formula
+        const deductionParts = [];
+        if (focusLossDeduction > 0) deductionParts.push(`${eventCounts.focusLoss} focus loss (${focusLossDeduction})`);
+        if (absenceDeduction > 0) deductionParts.push(`${eventCounts.absence} absence (${absenceDeduction})`);
+        if (multipleFacesDeduction > 0) deductionParts.push(`${eventCounts.multipleFaces} multiple faces (${multipleFacesDeduction})`);
+        if (unauthorizedItemsDeduction > 0) deductionParts.push(`${eventCounts.unauthorizedItems} unauthorized items (${unauthorizedItemsDeduction})`);
+        if (manualObservationsDeduction > 0) deductionParts.push(`${flaggedObservations.length} manual flags (${manualObservationsDeduction})`);
+        
+        const formula = deductionParts.length > 0 
+            ? `100 - [${deductionParts.join(' + ')}] = ${finalScore}`
+            : `100 - 0 = ${finalScore}`;
+
+        return {
+            baseScore,
+            deductions: {
+                focusLoss: focusLossDeduction,
+                absence: absenceDeduction,
+                multipleFaces: multipleFacesDeduction,
+                unauthorizedItems: unauthorizedItemsDeduction,
+                manualObservations: manualObservationsDeduction,
+                total: totalDeductions
+            },
+            finalScore,
+            formula
+        };
+    }
+
+    /**
      * Get human-readable description for detection event
      */
     private static getEventDescription(event: any): string {
@@ -492,6 +605,73 @@ export class ReportService {
         </div>
       ` : '';
 
+        // Generate integrity breakdown section
+        const integrityBreakdownSection = report.integrityBreakdown ? `
+        <div class="section">
+          <h2>Detailed Integrity Score Calculation</h2>
+          <div class="integrity-breakdown">
+            <div class="formula-section">
+              <h3>Formula: Final Integrity Score = 100 - Total Deductions</h3>
+              <p class="formula-text">${report.integrityBreakdown.formula}</p>
+            </div>
+            <div class="breakdown-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Violation Type</th>
+                    <th>Count</th>
+                    <th>Points per Incident</th>
+                    <th>Total Deduction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Focus Loss</td>
+                    <td>${Math.round(report.integrityBreakdown.deductions.focusLoss / 2)}</td>
+                    <td>-2</td>
+                    <td>-${report.integrityBreakdown.deductions.focusLoss}</td>
+                  </tr>
+                  <tr>
+                    <td>Absence</td>
+                    <td>${Math.round(report.integrityBreakdown.deductions.absence / 5)}</td>
+                    <td>-5</td>
+                    <td>-${report.integrityBreakdown.deductions.absence}</td>
+                  </tr>
+                  <tr>
+                    <td>Multiple Faces</td>
+                    <td>${Math.round(report.integrityBreakdown.deductions.multipleFaces / 10)}</td>
+                    <td>-10</td>
+                    <td>-${report.integrityBreakdown.deductions.multipleFaces}</td>
+                  </tr>
+                  <tr>
+                    <td>Unauthorized Items</td>
+                    <td>${Math.round(report.integrityBreakdown.deductions.unauthorizedItems / 15)}</td>
+                    <td>-15</td>
+                    <td>-${report.integrityBreakdown.deductions.unauthorizedItems}</td>
+                  </tr>
+                  <tr>
+                    <td>Manual Flags</td>
+                    <td>-</td>
+                    <td>Variable</td>
+                    <td>-${report.integrityBreakdown.deductions.manualObservations}</td>
+                  </tr>
+                  <tr class="total-row">
+                    <td><strong>Total Deductions</strong></td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td><strong>-${report.integrityBreakdown.deductions.total}</strong></td>
+                  </tr>
+                  <tr class="final-score-row">
+                    <td><strong>Final Integrity Score</strong></td>
+                    <td colspan="3"><strong>${report.integrityBreakdown.finalScore}/100</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ` : '';
+
         return `
       <!DOCTYPE html>
       <html>
@@ -505,9 +685,15 @@ export class ReportService {
           .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
           .summary-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
           .integrity-score { font-size: 24px; font-weight: bold; color: ${report.integrityScore >= 80 ? '#28a745' : report.integrityScore >= 60 ? '#ffc107' : '#dc3545'}; }
+          .integrity-breakdown { margin-top: 15px; }
+          .formula-section { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+          .formula-text { font-family: monospace; font-size: 16px; font-weight: bold; color: #007bff; margin: 10px 0; }
+          .breakdown-table { margin-top: 15px; }
           table { width: 100%; border-collapse: collapse; margin-top: 10px; }
           th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
           th { background-color: #f8f9fa; }
+          .total-row { background-color: #e9ecef; font-weight: bold; }
+          .final-score-row { background-color: #d4edda; font-weight: bold; color: #155724; }
           .flagged { background-color: #fff3cd; }
           .severity-low { color: #28a745; }
           .severity-medium { color: #ffc107; }
@@ -528,7 +714,7 @@ export class ReportService {
             <div class="summary-card">
               <h3>Interview Details</h3>
               <p><strong>Duration:</strong> ${Math.floor(report.interviewDuration / 60)} minutes ${report.interviewDuration % 60} seconds</p>
-              <p><strong>Integrity Score:</strong> <span class="integrity-score">${report.integrityScore}/100</span></p>
+              <p><strong>Final Integrity Score:</strong> <span class="integrity-score">${report.integrityScore}/100</span></p>
             </div>
             <div class="summary-card">
               <h3>Violation Summary</h3>
@@ -539,6 +725,8 @@ export class ReportService {
             </div>
           </div>
         </div>
+
+        ${integrityBreakdownSection}
 
         <div class="section">
           <h2>Suspicious Events</h2>

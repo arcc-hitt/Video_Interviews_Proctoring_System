@@ -8,6 +8,7 @@
 export enum EventType {
   FOCUS_LOSS = 'focus-loss',
   ABSENCE = 'absence',
+  FACE_VISIBLE = 'face-visible',
   MULTIPLE_FACES = 'multiple-faces',
   UNAUTHORIZED_ITEM = 'unauthorized-item',
   DROWSINESS = 'drowsiness',
