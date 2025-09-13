@@ -122,6 +122,10 @@ const ProctoringReportSchema = new Schema<ProctoringReportDocument>({
     required: true,
     default: Date.now,
     index: true
+  },
+  metadata: {
+    type: Schema.Types.Mixed,
+    default: {}
   }
 }, {
   timestamps: true,

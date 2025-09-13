@@ -282,13 +282,47 @@ router.get('/:sessionId/summary',
       const multipleFacesCount = summaryByType[EventType.MULTIPLE_FACES]?.count || 0;
       const unauthorizedItemsCount = summaryByType[EventType.UNAUTHORIZED_ITEM]?.count || 0;
 
+      // Calculate individual deductions
+      const focusLossDeduction = focusLossCount * 2;
+      const absenceDeduction = absenceCount * 5;
+      const multipleFacesDeduction = multipleFacesCount * 10;
+      const unauthorizedItemsDeduction = unauthorizedItemsCount * 15;
+
       // Deduct points based on violations
-      integrityScore -= focusLossCount * 2; // 2 points per focus loss
-      integrityScore -= absenceCount * 5; // 5 points per absence
-      integrityScore -= multipleFacesCount * 10; // 10 points per multiple faces
-      integrityScore -= unauthorizedItemsCount * 15; // 15 points per unauthorized item
+      integrityScore -= focusLossDeduction; // 2 points per focus loss
+      integrityScore -= absenceDeduction; // 5 points per absence
+      integrityScore -= multipleFacesDeduction; // 10 points per multiple faces
+      integrityScore -= unauthorizedItemsDeduction; // 15 points per unauthorized item
 
       integrityScore = Math.max(0, integrityScore); // Ensure score doesn't go below 0
+
+      // Calculate detailed breakdown
+      const totalDeductions = focusLossDeduction + absenceDeduction + multipleFacesDeduction + unauthorizedItemsDeduction;
+      
+      // Create readable formula
+      const deductionParts = [];
+      if (focusLossDeduction > 0) deductionParts.push(`${focusLossCount} focus loss (${focusLossDeduction})`);
+      if (absenceDeduction > 0) deductionParts.push(`${absenceCount} absence (${absenceDeduction})`);
+      if (multipleFacesDeduction > 0) deductionParts.push(`${multipleFacesCount} multiple faces (${multipleFacesDeduction})`);
+      if (unauthorizedItemsDeduction > 0) deductionParts.push(`${unauthorizedItemsCount} unauthorized items (${unauthorizedItemsDeduction})`);
+      
+      const formula = deductionParts.length > 0 
+        ? `100 - [${deductionParts.join(' + ')}] = ${integrityScore}`
+        : `100 - 0 = ${integrityScore}`;
+
+      const integrityBreakdown = {
+        baseScore: 100,
+        deductions: {
+          focusLoss: focusLossDeduction,
+          absence: absenceDeduction,
+          multipleFaces: multipleFacesDeduction,
+          unauthorizedItems: unauthorizedItemsDeduction,
+          manualObservations: 0, // Not calculated in real-time summary
+          total: totalDeductions
+        },
+        finalScore: integrityScore,
+        formula
+      };
 
       const summary = {
         sessionId,
@@ -297,6 +331,7 @@ router.get('/:sessionId/summary',
         sessionDuration,
         totalEvents,
         integrityScore,
+        integrityBreakdown,
         eventsByType: summaryByType,
         counts: {
           focusLoss: focusLossCount,
