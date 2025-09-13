@@ -477,7 +477,8 @@ export class ReportService {
             }
         });
 
-        return Math.max(0, score);
+        // Allow negative scores to reflect severe violations
+        return score;
     }
 
     /**
@@ -525,7 +526,7 @@ export class ReportService {
         });
 
         const totalDeductions = focusLossDeduction + absenceDeduction + multipleFacesDeduction + unauthorizedItemsDeduction + manualObservationsDeduction;
-        const finalScore = Math.max(0, baseScore - totalDeductions);
+        const finalScore = baseScore - totalDeductions; // Allow negative scores
         
         // Create readable formula
         const deductionParts = [];
@@ -684,7 +685,7 @@ export class ReportService {
           .section { margin-bottom: 30px; }
           .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
           .summary-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
-          .integrity-score { font-size: 24px; font-weight: bold; color: ${report.integrityScore >= 80 ? '#28a745' : report.integrityScore >= 60 ? '#ffc107' : '#dc3545'}; }
+          .integrity-score { font-size: 24px; font-weight: bold; color: ${report.integrityScore >= 80 ? '#28a745' : report.integrityScore >= 60 ? '#ffc107' : report.integrityScore >= 0 ? '#dc3545' : '#8B0000'}; }
           .integrity-breakdown { margin-top: 15px; }
           .formula-section { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
           .formula-text { font-family: monospace; font-size: 16px; font-weight: bold; color: #007bff; margin: 10px 0; }

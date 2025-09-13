@@ -171,7 +171,7 @@ export const ProctoringReportSchema = z.object({
   absenceCount: z.number().int().min(0),
   multipleFacesCount: z.number().int().min(0),
   unauthorizedItemsCount: z.number().int().min(0),
-  integrityScore: z.number().min(0).max(100),
+  integrityScore: z.number().max(100),
   suspiciousEvents: z.array(SuspiciousEventSchema),
   manualObservations: z.array(ManualObservationSchema).optional(),
   generatedAt: z.date(),
