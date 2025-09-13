@@ -85,8 +85,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   private logErrorToService = (error: Error, errorInfo: ErrorInfo) => {
-    // In a real application, you would send this to an error reporting service
-    // like Sentry, LogRocket, or Bugsnag
     const errorReport = {
       message: error.message,
       stack: error.stack,
@@ -151,7 +149,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return (
         <div className="error-boundary">
           <div className="error-boundary__container">
-            <div className="error-boundary__icon">⚠️</div>
+            <div className="error-boundary__icon">!</div>
             <h2 className="error-boundary__title">Something went wrong</h2>
             <p className="error-boundary__message">
               We're sorry, but something unexpected happened. Please try again.

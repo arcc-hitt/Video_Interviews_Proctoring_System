@@ -1,4 +1,5 @@
 import React from 'react';
+import { Video, X, Search, Wifi, Settings, Camera } from 'lucide-react';
 import type { VideoStreamError } from '../../types';
 
 interface UserFriendlyErrorProps {
@@ -26,7 +27,7 @@ const ERROR_MESSAGES: Record<string, ErrorMessage> = {
       'Refresh the page and try again',
       'Check if another application is using your camera'
     ],
-    icon: '📷',
+    icon: 'camera',
     severity: 'high'
   },
   DEVICE_NOT_FOUND: {
@@ -38,7 +39,7 @@ const ERROR_MESSAGES: Record<string, ErrorMessage> = {
       'Try refreshing the page',
       'Contact support if the problem persists'
     ],
-    icon: '🔍',
+    icon: 'search',
     severity: 'high'
   },
   RECORDING_FAILED: {
@@ -50,7 +51,7 @@ const ERROR_MESSAGES: Record<string, ErrorMessage> = {
       'Try refreshing the page',
       'Contact support if the problem continues'
     ],
-    icon: '🎥',
+    icon: 'video',
     severity: 'medium'
   },
   STREAM_FAILED: {
@@ -62,7 +63,7 @@ const ERROR_MESSAGES: Record<string, ErrorMessage> = {
       'Close other applications that might be using bandwidth',
       'Contact support if the problem persists'
     ],
-    icon: '📡',
+    icon: 'wifi',
     severity: 'high'
   },
   PROCESSING_ERROR: {
@@ -74,8 +75,22 @@ const ERROR_MESSAGES: Record<string, ErrorMessage> = {
       'Contact support if the problem continues',
       'The interview can continue with basic monitoring'
     ],
-    icon: '⚙️',
+    icon: 'settings',
     severity: 'medium'
+  }
+};
+
+const renderIcon = (iconName: string) => {
+  const iconProps = { size: 24, className: "error-icon" };
+  
+  switch (iconName) {
+    case 'camera': return <Camera {...iconProps} />;
+    case 'search': return <Search {...iconProps} />;
+    case 'video': return <Video {...iconProps} />;
+    case 'wifi': return <Wifi {...iconProps} />;
+    case 'settings': return <Settings {...iconProps} />;
+    case 'error': return <X {...iconProps} />;
+    default: return <X {...iconProps} />;
   }
 };
 
@@ -89,7 +104,7 @@ export const UserFriendlyError: React.FC<UserFriendlyErrorProps> = ({
     title: 'Unknown Error',
     description: 'An unexpected error occurred.',
     suggestions: ['Try refreshing the page', 'Contact support if the problem persists'],
-    icon: '❌',
+    icon: 'error',
     severity: 'medium' as const
   };
 
@@ -107,7 +122,7 @@ export const UserFriendlyError: React.FC<UserFriendlyErrorProps> = ({
     <div className={`user-friendly-error ${getSeverityClass(errorInfo.severity)}`}>
       <div className="user-friendly-error__container">
         <div className="user-friendly-error__header">
-          <div className="user-friendly-error__icon">{errorInfo.icon}</div>
+          <div className="user-friendly-error__icon">{renderIcon(errorInfo.icon)}</div>
           <div className="user-friendly-error__content">
             <h3 className="user-friendly-error__title">{errorInfo.title}</h3>
             <p className="user-friendly-error__description">{errorInfo.description}</p>

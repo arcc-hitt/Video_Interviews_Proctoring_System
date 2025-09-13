@@ -160,7 +160,7 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
             ...alert, 
             acknowledged: true, 
             acknowledgedAt: new Date(),
-            acknowledgedBy: 'Current User' // In real app, get from auth context
+            acknowledgedBy: 'Current User'
           }
         : alert
     ));
@@ -279,7 +279,7 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
 
     // Clean up existing service first
     if (serviceRef.current) {
-      console.log('[useAlertStreaming] 🧹 Cleaning up existing service');
+      console.log('[useAlertStreaming] Cleaning up existing service');
       serviceRef.current.destroy();
     }
 
@@ -287,7 +287,6 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
 
     return () => {
       clearReconnectTimeout();
-      // Don't destroy service immediately in cleanup (React StrictMode issue)
       // Service will be cleaned up when component actually unmounts or token changes
     };
   }, [options.authToken]); // Only essential dependency

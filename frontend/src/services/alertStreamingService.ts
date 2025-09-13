@@ -75,7 +75,6 @@ export class AlertStreamingService {
           reject(new Error('Authentication token is required'));
           return;
         }
-
         // Disconnect existing socket if any
         if (this.socket) {
           this.socket.removeAllListeners();
@@ -393,7 +392,7 @@ export class AlertStreamingService {
       alertId,
       sessionId: sessionId || this.config.sessionId,
       timestamp: new Date(),
-      acknowledgedBy: 'interviewer' // In real app, get from auth context
+      acknowledgedBy: 'interviewer'
     });
 
     // Acknowledged alert

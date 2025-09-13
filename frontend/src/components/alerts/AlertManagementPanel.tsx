@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import type { Alert } from '../../types';
-import { AlertTriangle, Flag, CheckCircle, History, Plus, FileText } from 'lucide-react';
+import { AlertTriangle, Flag, CheckCircle, History, Plus, FileText, Eye, X, Users, Smartphone } from 'lucide-react';
 import { AlertHistory } from './AlertHistory';
 import { safeFormatTime } from '../../utils/dateUtils';
 import { ErrorBoundary } from '../error/ErrorBoundary';
@@ -87,52 +87,41 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
 
   // Get alert icon
   const getAlertIcon = (type: string) => {
+    const iconProps = { size: 20, className: "flex-shrink-0" };
+    
     switch (type) {
       case 'focus-loss':
-        return '👀';
+        return <Eye {...iconProps} />;
       case 'absence':
-        return '❌';
+        return <X {...iconProps} />;
       case 'multiple-faces':
-        return '👥';
+        return <Users {...iconProps} />;
       case 'unauthorized-item':
-        return '📱';
+        return <Smartphone {...iconProps} />;
       default:
-        return '⚠️';
+        return <AlertTriangle {...iconProps} />;
     }
   };
 
   return (
-    <ErrorBoundary
-      fallback={
-        <div className={`bg-white rounded-lg shadow-sm border p-6 ${className}`}>
-          <div className="text-center">
-            <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Alert Management Unavailable</h3>
-            <p className="text-sm text-gray-600">
-              There was an error loading the alert management panel. Please try refreshing the page.
-            </p>
-          </div>
-        </div>
-      }
-    >
-      <div className={`bg-white rounded-lg shadow-sm border ${className}`}>
+    <div className={`bg-white rounded-lg shadow-sm border w-full max-w-full overflow-hidden ${className}`}>
       {/* Header with Tabs */}
       <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-2">
-            <AlertTriangle className="w-5 h-5 text-orange-500" />
-            <h3 className="text-lg font-medium text-gray-900">
+        <div className="flex items-center justify-between mb-4 min-w-0">
+          <div className="flex items-center space-x-2 min-w-0 flex-1">
+            <AlertTriangle className="w-5 h-5 text-orange-500 flex-shrink-0" />
+            <h3 className="text-lg font-medium text-gray-900 truncate">
               Alert Management
             </h3>
             {unacknowledgedCount > 0 && (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 flex-shrink-0">
                 {unacknowledgedCount} new
               </span>
             )}
           </div>
           
           {/* Quick Actions */}
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-shrink-0">
             <button
               onClick={() => setShowManualFlagForm(!showManualFlagForm)}
               className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -145,19 +134,19 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
+        <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 overflow-hidden">
           <button
             onClick={() => setViewMode('live')}
-            className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex-1 flex items-center justify-center px-2 py-2 text-sm font-medium rounded-md transition-colors min-w-0 ${
               viewMode === 'live'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            <AlertTriangle className="w-4 h-4 mr-1" />
-            Live Alerts
+            <AlertTriangle className="w-4 h-4 mr-1 flex-shrink-0" />
+            <span className="truncate">Live Alerts</span>
             {unacknowledgedCount > 0 && (
-              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+              <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 flex-shrink-0">
                 {unacknowledgedCount}
               </span>
             )}
@@ -165,44 +154,44 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
           
           <button
             onClick={() => setViewMode('history')}
-            className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex-1 flex items-center justify-center px-2 py-2 text-sm font-medium rounded-md transition-colors min-w-0 ${
               viewMode === 'history'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            <History className="w-4 h-4 mr-1" />
-            History
-            <span className="ml-2 text-xs text-gray-400">({alerts.length})</span>
+            <History className="w-4 h-4 mr-1 flex-shrink-0" />
+            <span className="truncate">History</span>
+            <span className="ml-1 text-xs text-gray-400 flex-shrink-0">({alerts.length})</span>
           </button>
           
           <button
             onClick={() => setViewMode('notes')}
-            className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+            className={`flex-1 flex items-center justify-center px-2 py-2 text-sm font-medium rounded-md transition-colors min-w-0 ${
               viewMode === 'notes'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            <FileText className="w-4 h-4 mr-1" />
-            Notes
-            <span className="ml-2 text-xs text-gray-400">({sessionNotes.length})</span>
+            <FileText className="w-4 h-4 mr-1 flex-shrink-0" />
+            <span className="truncate">Notes</span>
+            <span className="ml-1 text-xs text-gray-400 flex-shrink-0">({sessionNotes.length})</span>
           </button>
         </div>
       </div>
 
       {/* Manual Flag Form */}
       {showManualFlagForm && (
-        <div className="p-4 bg-gray-50 border-b border-gray-200">
+        <div className="p-4 bg-gray-50 border-b border-gray-200 overflow-hidden">
           <div className="space-y-3">
             <textarea
               value={manualFlagText}
               onChange={(e) => setManualFlagText(e.target.value)}
               placeholder="Describe the suspicious behavior or concern..."
-              className="w-full p-3 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full p-3 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 resize-none"
               rows={3}
             />
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <select
                 value={manualFlagSeverity}
                 onChange={(e) => setManualFlagSeverity(e.target.value as 'low' | 'medium' | 'high')}
@@ -234,10 +223,10 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
       )}
 
       {/* Content Area */}
-      <div className="p-4">
+      <div className="p-4 overflow-hidden">
         {/* Live Alerts View */}
         {viewMode === 'live' && (
-          <div className="space-y-3 max-h-96 overflow-y-auto">
+          <div className="space-y-3 max-h-96 overflow-y-auto overflow-x-hidden">
             {(() => {
               // Filter to show only unacknowledged alerts in live view
               const unacknowledgedAlerts = alerts.filter(alert => 
@@ -258,19 +247,21 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
                   key={`${alert.type}-${index}`}
                   className="flex items-start justify-between p-3 bg-gray-50 rounded-md"
                 >
-                  <div className="flex items-start space-x-3 flex-1">
-                    <div className="text-lg">{getAlertIcon(alert.type)}</div>
+                  <div className="flex items-start space-x-3 flex-1 min-w-0">
+                    <div className="flex items-center justify-center w-5 h-5 mt-0.5">
+                      {getAlertIcon(alert.type)}
+                    </div>
                     
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="text-sm font-medium text-gray-900">
+                      <div className="flex items-center flex-wrap gap-2 mb-1">
+                        <span className="text-sm font-medium text-gray-900 break-words">
                           {alert.message}
                         </span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getSeverityColor(alert.severity)}`}>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${getSeverityColor(alert.severity)}`}>
                           {alert.severity?.toUpperCase() || 'UNKNOWN'}
                         </span>
-                        <span className="text-xs text-gray-500">
-                          {safeFormatTime(alert.timestamp)}
+                        <span className="text-xs text-gray-500 flex-shrink-0">
+                          {formatTime(alert.timestamp)}
                         </span>
                       </div>
                       
@@ -285,7 +276,7 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
                   {onAlertAcknowledge && alert.id && (
                     <button
                       onClick={() => handleAcknowledge(alert.id!)}
-                      className="ml-3 inline-flex items-center px-2.5 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500"
+                      className="ml-3 inline-flex items-center px-2.5 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 flex-shrink-0"
                     >
                       <CheckCircle className="w-3 h-3 mr-1" />
                       Ack
@@ -308,7 +299,7 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
 
         {/* Notes View */}
         {viewMode === 'notes' && (
-          <div className="space-y-3 max-h-96 overflow-y-auto">
+          <div className="space-y-3 max-h-96 overflow-y-scroll overflow-x-hidden">
             {sessionNotes.length === 0 ? (
               <div className="text-center py-8">
                 <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -321,14 +312,14 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
                   key={note.id}
                   className={`p-3 rounded-md ${getSeverityColor(note.severity)}`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{note.note}</p>
+                  <div className="flex items-start justify-between min-w-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium break-words">{note.note}</p>
                       <p className="text-xs mt-1 opacity-75">
                         {safeFormatTime(note.timestamp)}
                       </p>
                     </div>
-                    <Flag className="w-4 h-4 ml-2 opacity-60" />
+                    <Flag className="w-4 h-4 ml-2 opacity-60 flex-shrink-0" />
                   </div>
                 </div>
               ))
@@ -338,9 +329,9 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 rounded-b-lg">
-        <div className="flex items-center justify-between text-xs text-gray-600">
-          <span>
+      <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 rounded-b-lg overflow-hidden">
+        <div className="flex items-center justify-between text-xs text-gray-600 min-w-0">
+          <span className="truncate flex-1">
             {viewMode === 'live' 
               ? `${unacknowledgedCount} unacknowledged alerts`
               : viewMode === 'history'
@@ -348,7 +339,7 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
               : `${sessionNotes.length} session notes`
             }
           </span>
-          <span>Session: {sessionId || 'N/A'}</span>
+          <span className="ml-2 flex-shrink-0 truncate">Session: {sessionId || 'N/A'}</span>
         </div>
       </div>
     </div>
