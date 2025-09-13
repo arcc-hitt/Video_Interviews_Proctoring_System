@@ -19,8 +19,12 @@ class ApiService {
   private onUnauthorized?: () => void;
 
   constructor() {
-    // Set the backend URL from environment variable
-    this.baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+    // In production, use relative URLs to leverage Vercel proxy
+    // In development, use environment variable or localhost
+    this.baseURL = import.meta.env.PROD 
+      ? '' // Use relative URLs in production (Vercel will proxy to Railway)
+      : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000');
+    
     console.log('🔧 API Service initialized with baseURL:', this.baseURL);
     console.log('🔧 Environment variables:', {
       VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
