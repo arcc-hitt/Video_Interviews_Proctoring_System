@@ -71,7 +71,7 @@ export class AlertStreamingService {
         
         if (!token) {
           this.isConnecting = false;
-          console.error('[AlertStreaming] ❌ No authentication token available');
+          console.error('[AlertStreaming] No authentication token available');
           reject(new Error('Authentication token is required'));
           return;
         }
@@ -130,7 +130,7 @@ export class AlertStreamingService {
         this.socket.on('connect_error', (error) => {
           clearTimeout(connectionTimeout);
           this.isConnecting = false;
-          console.error('[AlertStreaming] ❌ Connection error:', error);
+          console.error('[AlertStreaming] Connection error:', error);
           
           if (this.callbacks.onError) {
             this.callbacks.onError(new Error(`Connection failed: ${error.message}`));
@@ -150,7 +150,7 @@ export class AlertStreamingService {
 
       } catch (error) {
         this.isConnecting = false;
-        console.error('[AlertStreaming] ❌ Connect method error:', error);
+        console.error('[AlertStreaming] Connect method error:', error);
         reject(error);
       }
     });
@@ -192,7 +192,7 @@ export class AlertStreamingService {
       if (this.callbacks.onAlert) {
         this.callbacks.onAlert(frontendAlert);
       } else {
-        console.warn('[AlertStreaming] 📥 No onAlert callback registered!');
+        console.warn('[AlertStreaming] No onAlert callback registered!');
       }
     });
 
@@ -239,7 +239,7 @@ export class AlertStreamingService {
 
     // Session join error
     this.socket.on('session_join_error', (error: any) => {
-      console.error('[AlertStreaming] ❌ Session join error:', error);
+      console.error('[AlertStreaming] Session join error:', error);
       if (this.callbacks.onError) {
         this.callbacks.onError(new Error(`Session join error: ${error.message || error}`));
       }
@@ -262,15 +262,37 @@ export class AlertStreamingService {
     const alertMessages: Record<DetectionEvent['eventType'], string> = {
       'focus-loss': 'Candidate looking away from screen',
       'absence': 'Candidate not present in frame',
+      'face-visible': 'Candidate face is now visible',
       'multiple-faces': 'Multiple faces detected',
-      'unauthorized-item': `Unauthorized item detected: ${event.metadata?.objectType || 'unknown item'}`
+      'unauthorized-item': `Unauthorized item detected: ${event.metadata?.objectType || 'unknown item'}`,
+      'manual_flag': 'Manual observation flagged',
+      'inactivity': 'Candidate inactive',
+      'long_session': 'Long session detected',
+      'heartbeat': 'System heartbeat',
+      'drowsiness': 'Drowsiness detected',
+      'eye-closure': 'Eye closure detected',
+      'excessive-blinking': 'Excessive blinking detected',
+      'background-voice': 'Background voice detected',
+      'multiple-voices': 'Multiple voices detected',
+      'excessive-noise': 'Excessive noise detected'
     };
 
     const alertSeverities: Record<DetectionEvent['eventType'], Alert['severity']> = {
       'focus-loss': 'low',
       'absence': 'medium',
+      'face-visible': 'low',
       'multiple-faces': 'high',
-      'unauthorized-item': 'high'
+      'unauthorized-item': 'high',
+      'manual_flag': 'medium',
+      'inactivity': 'low',
+      'long_session': 'low',
+      'heartbeat': 'low',
+      'drowsiness': 'medium',
+      'eye-closure': 'medium',
+      'excessive-blinking': 'low',
+      'background-voice': 'medium',
+      'multiple-voices': 'high',
+      'excessive-noise': 'medium'
     };
 
     return {
@@ -333,7 +355,7 @@ export class AlertStreamingService {
     if (!this.socket || !this.config.sessionId) return;
 
     this.socket.emit('leave_session', this.config.sessionId);
-    console.log(`Left session: ${this.config.sessionId}`);
+    // Left session
     this.config.sessionId = undefined;
   }
 
@@ -342,7 +364,7 @@ export class AlertStreamingService {
    */
   sendManualFlag(description: string, severity: 'low' | 'medium' | 'high'): void {
     if (!this.socket || !this.config.sessionId || !this.isConnected) {
-      console.warn('Cannot send manual flag: not connected or no session');
+      // Cannot send manual flag: not connected or no session
       return;
     }
 
@@ -355,7 +377,7 @@ export class AlertStreamingService {
     };
 
     this.socket.emit('manual_flag', flag);
-    console.log('Sent manual flag:', flag);
+    // Sent manual flag
   }
 
   /**
@@ -363,7 +385,7 @@ export class AlertStreamingService {
    */
   acknowledgeAlert(alertId: string, sessionId?: string): void {
     if (!this.socket || !this.isConnected) {
-      console.warn('Cannot acknowledge alert: not connected');
+      // Cannot acknowledge alert: not connected
       return;
     }
 
@@ -374,7 +396,7 @@ export class AlertStreamingService {
       acknowledgedBy: 'interviewer' // In real app, get from auth context
     });
 
-    console.log(`Acknowledged alert: ${alertId}`);
+    // Acknowledged alert
   }
 
   /**
@@ -392,7 +414,7 @@ export class AlertStreamingService {
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
 
-    console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms`);
+    // Attempting to reconnect
 
     setTimeout(() => {
       this.connect().catch((error) => {
@@ -440,7 +462,7 @@ export class AlertStreamingService {
    * Disconnect from WebSocket server
    */
   disconnect(): void {
-    console.log('[AlertStreaming] 🔌 Disconnecting from alert stream');
+    // Disconnecting from alert stream
     
     // Clear any pending session join timeout
     if (this.joinSessionTimeout) {
@@ -457,7 +479,7 @@ export class AlertStreamingService {
     this.isConnecting = false;
     this.currentSessionId = null;
     this.reconnectAttempts = 0;
-    console.log('[AlertStreaming] ❌ Alert streaming service disconnected');
+    // Alert streaming service disconnected
   }
 
   /**

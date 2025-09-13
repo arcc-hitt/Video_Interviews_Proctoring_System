@@ -9,6 +9,7 @@ import { z } from 'zod';
 export enum EventType {
   FOCUS_LOSS = 'focus-loss',
   ABSENCE = 'absence',
+  FACE_VISIBLE = 'face-visible',
   MULTIPLE_FACES = 'multiple-faces',
   UNAUTHORIZED_ITEM = 'unauthorized-item',
   DROWSINESS = 'drowsiness',
@@ -173,7 +174,8 @@ export const ProctoringReportSchema = z.object({
   integrityScore: z.number().min(0).max(100),
   suspiciousEvents: z.array(SuspiciousEventSchema),
   manualObservations: z.array(ManualObservationSchema).optional(),
-  generatedAt: z.date()
+  generatedAt: z.date(),
+  metadata: z.record(z.string(), z.any()).optional()
 });
 
 // Auth User Schema
