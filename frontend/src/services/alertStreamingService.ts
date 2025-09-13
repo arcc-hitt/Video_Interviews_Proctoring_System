@@ -56,7 +56,7 @@ export class AlertStreamingService {
       try {
         // Prevent connection conflicts
         if (this.isConnected || this.isConnecting || this.isDestroyed) {
-          console.log('[AlertStreaming] 🚫 Connection prevented:', {
+          console.log('[AlertStreaming] Connection prevented:', {
             isConnected: this.isConnected,
             isConnecting: this.isConnecting,
             isDestroyed: this.isDestroyed
@@ -76,12 +76,12 @@ export class AlertStreamingService {
         
         if (!token) {
           this.isConnecting = false;
-          console.error('[AlertStreaming] ❌ No authentication token available');
+          console.error('[AlertStreaming] No authentication token available');
           reject(new Error('Authentication token is required'));
           return;
         }
 
-        console.log('[AlertStreaming] 🔐 Connecting with token:', token ? '***has_token***' : 'missing');
+        console.log('[AlertStreaming] Connecting with token:', token ? '***has_token***' : 'missing');
 
         // Disconnect existing socket if any
         if (this.socket) {
@@ -115,15 +115,15 @@ export class AlertStreamingService {
 
         this.socket.on('connect', () => {
           clearTimeout(connectionTimeout);
-          console.log('[AlertStreaming] ✅ Alert streaming service connected');
-          console.log('[AlertStreaming] 📡 Socket object:', this.socket?.id, 'connected:', this.socket?.connected);
+          console.log('[AlertStreaming] Alert streaming service connected');
+          console.log('[AlertStreaming] Socket object:', this.socket?.id, 'connected:', this.socket?.connected);
           this.isConnected = true;
           this.isConnecting = false;
           this.reconnectAttempts = 0;
           
           // Join session if sessionId is provided
           if (this.config.sessionId) {
-            console.log('[AlertStreaming] 🔄 Auto-joining session:', this.config.sessionId);
+            console.log('[AlertStreaming] Auto-joining session:', this.config.sessionId);
             this.joinSessionTimeout = setTimeout(() => {
               if (this.isConnected && !this.isDestroyed) {
                 this.joinSession(this.config.sessionId!);
@@ -141,7 +141,7 @@ export class AlertStreamingService {
         this.socket.on('connect_error', (error) => {
           clearTimeout(connectionTimeout);
           this.isConnecting = false;
-          console.error('[AlertStreaming] ❌ Connection error:', error);
+          console.error('[AlertStreaming] Connection error:', error);
           console.error('[AlertStreaming] Error details:', {
             message: error.message,
             stack: error.stack,
@@ -156,7 +156,7 @@ export class AlertStreamingService {
         });
 
         this.socket.on('disconnect', (reason) => {
-          console.log('[AlertStreaming] 🔌 Socket disconnected:', reason);
+          console.log('[AlertStreaming] Socket disconnected:', reason);
           this.isConnected = false;
           this.isConnecting = false;
           
@@ -167,7 +167,7 @@ export class AlertStreamingService {
 
       } catch (error) {
         this.isConnecting = false;
-        console.error('[AlertStreaming] ❌ Connect method error:', error);
+        console.error('[AlertStreaming] Connect method error:', error);
         reject(error);
       }
     });
@@ -203,8 +203,8 @@ export class AlertStreamingService {
 
     // Direct alerts from backend (processed alerts with payloads)
     this.socket.on('alert', (alert: any) => {
-      console.log('[AlertStreaming] 📥 Received alert from backend:', alert);
-      console.log('[AlertStreaming] 📥 Alert details:', {
+      console.log('[AlertStreaming] Received alert from backend:', alert);
+      console.log('[AlertStreaming] Alert details:', {
         id: alert.id,
         type: alert.type,
         eventType: alert.eventType,
@@ -227,20 +227,20 @@ export class AlertStreamingService {
         metadata: alert.metadata
       };
       
-      console.log('[AlertStreaming] 📥 Converted frontend alert:', frontendAlert);
-      console.log('[AlertStreaming] 📥 Callback available:', !!this.callbacks.onAlert);
+      console.log('[AlertStreaming] Converted frontend alert:', frontendAlert);
+      console.log('[AlertStreaming] Callback available:', !!this.callbacks.onAlert);
       
       if (this.callbacks.onAlert) {
-        console.log('[AlertStreaming] 📥 Calling onAlert callback with:', frontendAlert);
+        console.log('[AlertStreaming] Calling onAlert callback with:', frontendAlert);
         this.callbacks.onAlert(frontendAlert);
       } else {
-        console.warn('[AlertStreaming] 📥 No onAlert callback registered!');
+        console.warn('[AlertStreaming] No onAlert callback registered!');
       }
     });
 
     // Detection event from candidate
     this.socket.on('detection_event_broadcast', (event: DetectionEvent) => {
-      console.log('[AlertStreaming] 📥 Received detection event broadcast:', event);
+      console.log('[AlertStreaming] Received detection event broadcast:', event);
       
       const alert = this.convertDetectionEventToAlert(event);
       
@@ -281,7 +281,7 @@ export class AlertStreamingService {
 
     // Session joined confirmation
     this.socket.on('session_joined', (data: any) => {
-      console.log('[AlertStreaming] ✅ Session joined confirmation:', data);
+      console.log('[AlertStreaming] Session joined confirmation:', data);
       console.log('[AlertStreaming] Session details:', {
         sessionId: data.sessionId,
         role: data.role,
@@ -293,7 +293,7 @@ export class AlertStreamingService {
 
     // Session join error
     this.socket.on('session_join_error', (error: any) => {
-      console.error('[AlertStreaming] ❌ Session join error:', error);
+      console.error('[AlertStreaming] Session join error:', error);
       if (this.callbacks.onError) {
         this.callbacks.onError(new Error(`Session join error: ${error.message || error}`));
       }
@@ -350,7 +350,7 @@ export class AlertStreamingService {
 
     // Prevent duplicate session joins
     if (this.currentSessionId === sessionId) {
-      console.log('[AlertStreaming] 🔄 Already joined session:', sessionId);
+      console.log('[AlertStreaming] Already joined session:', sessionId);
       return;
     }
 
@@ -378,7 +378,7 @@ export class AlertStreamingService {
       token
     };
     
-    console.log('[AlertStreaming] 📤 Emitting join_session event with full payload:', {
+    console.log('[AlertStreaming] Emitting join_session event with full payload:', {
       sessionId,
       role: 'interviewer',
       userId,
@@ -389,7 +389,7 @@ export class AlertStreamingService {
     
     this.socket.emit('join_session', joinPayload);
 
-    console.log(`[AlertStreaming] ✅ Successfully emitted join session: ${sessionId} as interviewer`);
+    console.log(`[AlertStreaming] Successfully emitted join session: ${sessionId} as interviewer`);
   }
 
   /**
@@ -437,7 +437,7 @@ export class AlertStreamingService {
       alertId,
       sessionId: sessionId || this.config.sessionId,
       timestamp: new Date(),
-      acknowledgedBy: 'interviewer' // In real app, get from auth context
+      acknowledgedBy: 'interviewer'
     });
 
     console.log(`Acknowledged alert: ${alertId}`);
@@ -506,7 +506,7 @@ export class AlertStreamingService {
    * Disconnect from WebSocket server
    */
   disconnect(): void {
-    console.log('[AlertStreaming] 🔌 Disconnecting from alert stream');
+    console.log('[AlertStreaming] Disconnecting from alert stream');
     
     // Clear any pending session join timeout
     if (this.joinSessionTimeout) {
@@ -523,7 +523,7 @@ export class AlertStreamingService {
     this.isConnecting = false;
     this.currentSessionId = null;
     this.reconnectAttempts = 0;
-    console.log('[AlertStreaming] ❌ Alert streaming service disconnected');
+    console.log('[AlertStreaming] Alert streaming service disconnected');
   }
 
   /**

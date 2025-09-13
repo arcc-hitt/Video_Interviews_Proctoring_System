@@ -152,7 +152,6 @@ export class CVErrorBoundary extends Component<CVErrorBoundaryProps, CVErrorBoun
       return (
         <div className="cv-error-boundary">
           <div className="cv-error-boundary__container">
-            <div className="cv-error-boundary__icon">🤖</div>
             <h2 className="cv-error-boundary__title">Computer Vision Error</h2>
             <p className="cv-error-boundary__message">
               The computer vision system encountered an error. This might be due to:
@@ -200,7 +199,7 @@ export class CVErrorBoundary extends Component<CVErrorBoundaryProps, CVErrorBoun
       <div className={`cv-error-boundary__content ${fallbackMode ? 'fallback-mode' : ''}`}>
         {fallbackMode && (
           <div className="cv-error-boundary__fallback-notice">
-            <span className="cv-error-boundary__fallback-icon">⚠️</span>
+            <span className="cv-error-boundary__fallback-icon">!</span>
             <span>Running in basic monitoring mode</span>
           </div>
         )}

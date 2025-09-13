@@ -2,10 +2,8 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { Toaster } from './components/ui/sonner';
-import { AuthPage } from './components/auth/AuthPage';
-import { ProtectedRoute } from './components/auth/ProtectedRoute';
-import { CandidateDashboard } from './components/dashboard/CandidateDashboard';
-import { InterviewerDashboard } from './components/dashboard/InterviewerDashboard';
+import { AuthPage, ProtectedRoute } from './components/auth';
+import { CandidateDashboard, InterviewerDashboard } from './components/dashboard';
 
 function App() {
   return (
