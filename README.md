@@ -2,6 +2,14 @@
 
 A comprehensive web application designed to monitor candidates during online interviews using computer vision and machine learning technologies.
 
+## 🚀 Quick Deploy
+
+**Backend**: [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
+
+**Frontend**: [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+
+📖 **[Complete Deployment Guide](./DEPLOYMENT.md)**
+
 ## Project Structure
 
 ```
