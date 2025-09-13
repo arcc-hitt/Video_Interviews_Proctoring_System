@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import type { Alert } from '../../types';
 import { Download, Search, Clock, AlertTriangle } from 'lucide-react';
+import { 
+  safeParseDate, 
+  safeFormatDate, 
+  safeFormatDuration, 
+  safeToDateWithFallback 
+} from '../../utils/dateUtils';
+import { ErrorBoundary } from '../error/ErrorBoundary';
 
 interface AlertHistoryProps {
   sessionId: string;
@@ -33,85 +40,109 @@ export const AlertHistory: React.FC<AlertHistoryProps> = ({
 
   // Process alerts into history entries with aggregation
   useEffect(() => {
-    const processedEntries = new Map<string, AlertHistoryEntry>();
-    
-    alerts.forEach((alert, index) => {
-      const key = `${alert.type}-${alert.message}`;
-      const existing = processedEntries.get(key);
+    try {
+      const processedEntries = new Map<string, AlertHistoryEntry>();
       
-      if (existing) {
-        // Update existing entry
-        existing.eventCount += 1;
-        existing.lastOccurrence = new Date(Math.max(
-          existing.lastOccurrence.getTime(),
-          alert.timestamp.getTime()
-        ));
-        existing.firstOccurrence = new Date(Math.min(
-          existing.firstOccurrence.getTime(),
-          alert.timestamp.getTime()
-        ));
-      } else {
-        // Create new entry
-        processedEntries.set(key, {
-          ...alert,
-          id: `history-${index}`,
-          eventCount: 1,
-          firstOccurrence: alert.timestamp,
-          lastOccurrence: alert.timestamp
-        });
-      }
-    });
-    
-    setHistoryEntries(Array.from(processedEntries.values()));
+      alerts.forEach((alert, index) => {
+        try {
+          const key = `${alert.type}-${alert.message}`;
+          const existing = processedEntries.get(key);
+          
+          // Safely parse the alert timestamp
+          const alertDate = safeToDateWithFallback(alert.timestamp);
+          
+          if (existing) {
+            // Update existing entry
+            existing.eventCount += 1;
+            const lastOccurrenceTime = safeParseDate(existing.lastOccurrence)?.getTime() || 0;
+            const firstOccurrenceTime = safeParseDate(existing.firstOccurrence)?.getTime() || Date.now();
+            
+            existing.lastOccurrence = new Date(Math.max(lastOccurrenceTime, alertDate.getTime()));
+            existing.firstOccurrence = new Date(Math.min(firstOccurrenceTime, alertDate.getTime()));
+          } else {
+            // Create new entry
+            processedEntries.set(key, {
+              ...alert,
+              id: `history-${index}`,
+              timestamp: alertDate,
+              eventCount: 1,
+              firstOccurrence: alertDate,
+              lastOccurrence: alertDate
+            });
+          }
+        } catch (error) {
+          console.warn('Error processing alert:', alert, error);
+        }
+      });
+      
+      setHistoryEntries(Array.from(processedEntries.values()));
+    } catch (error) {
+      console.error('Error processing alerts:', error);
+      setHistoryEntries([]);
+    }
   }, [alerts]);
 
   // Filter entries based on current filters
   const filteredEntries = historyEntries.filter(entry => {
-    // Search filter
-    if (searchTerm && !entry.message.toLowerCase().includes(searchTerm.toLowerCase())) {
-      return false;
-    }
-    
-    // Date filter
-    if (dateFilter !== 'all') {
-      const now = new Date();
-      const cutoff = new Date(now.getTime() - (dateFilter === 'last-hour' ? 60 * 60 * 1000 : 30 * 60 * 1000));
-      if (entry.lastOccurrence < cutoff) {
+    try {
+      // Search filter
+      if (searchTerm && !entry.message.toLowerCase().includes(searchTerm.toLowerCase())) {
         return false;
       }
-    }
-    
-    // Type filter
-    if (typeFilter !== 'all' && entry.type !== typeFilter) {
+      
+      // Date filter
+      if (dateFilter !== 'all') {
+        const now = new Date();
+        const cutoff = new Date(now.getTime() - (dateFilter === 'last-hour' ? 60 * 60 * 1000 : 30 * 60 * 1000));
+        const lastOccurrence = safeParseDate(entry.lastOccurrence);
+        
+        if (!lastOccurrence || lastOccurrence < cutoff) {
+          return false;
+        }
+      }
+      
+      // Type filter
+      if (typeFilter !== 'all' && entry.type !== typeFilter) {
+        return false;
+      }
+      
+      // Severity filter
+      if (severityFilter !== 'all' && entry.severity !== severityFilter) {
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.warn('Error filtering entry:', entry, error);
       return false;
     }
-    
-    // Severity filter
-    if (severityFilter !== 'all' && entry.severity !== severityFilter) {
-      return false;
-    }
-    
-    return true;
   });
 
   // Sort entries
   const sortedEntries = [...filteredEntries].sort((a, b) => {
-    let comparison = 0;
-    
-    switch (sortBy) {
-      case 'timestamp':
-        comparison = a.lastOccurrence.getTime() - b.lastOccurrence.getTime();
-        break;
-      case 'severity':
-        const severityOrder = { high: 3, medium: 2, low: 1 };
-        comparison = severityOrder[a.severity] - severityOrder[b.severity];
-        break;
-      case 'type':
-        comparison = a.type.localeCompare(b.type);
-        break;
+    try {
+      let comparison = 0;
+      
+      switch (sortBy) {
+        case 'timestamp':
+          const aTime = safeParseDate(a.lastOccurrence)?.getTime() || 0;
+          const bTime = safeParseDate(b.lastOccurrence)?.getTime() || 0;
+          comparison = aTime - bTime;
+          break;
+        case 'severity':
+          const severityOrder = { high: 3, medium: 2, low: 1 };
+          comparison = severityOrder[a.severity] - severityOrder[b.severity];
+          break;
+        case 'type':
+          comparison = a.type.localeCompare(b.type);
+          break;
+      }
+      
+      return sortOrder === 'desc' ? -comparison : comparison;
+    } catch (error) {
+      console.warn('Error sorting entries:', a, b, error);
+      return 0;
     }
-    
-    return sortOrder === 'desc' ? -comparison : comparison;
   });
 
   // Get severity styling
@@ -144,75 +175,72 @@ export const AlertHistory: React.FC<AlertHistoryProps> = ({
     }
   };
 
-  // Format duration
-  const formatDuration = (start: Date, end: Date) => {
-    const diffMs = end.getTime() - start.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
-    const diffMin = Math.floor(diffSec / 60);
-    
-    if (diffMin > 0) {
-      return `${diffMin}m ${diffSec % 60}s`;
-    }
-    return `${diffSec}s`;
-  };
-
-  // Format timestamp
-  const formatTimestamp = (date: Date) => {
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-  };
+  // Format duration (removed - using safe utility function)
+  // Format timestamp (removed - using safe utility function)
 
   // Handle export
   const handleExport = (format: 'csv' | 'json') => {
-    if (onExport) {
-      onExport(format);
-    } else {
-      // Default export implementation
-      const data = sortedEntries.map(entry => ({
-        timestamp: entry.lastOccurrence.toISOString(),
-        type: entry.type,
-        severity: entry.severity,
-        message: entry.message,
-        eventCount: entry.eventCount,
-        duration: formatDuration(entry.firstOccurrence, entry.lastOccurrence),
-        firstOccurrence: entry.firstOccurrence.toISOString(),
-        lastOccurrence: entry.lastOccurrence.toISOString()
-      }));
-      
-      if (format === 'csv') {
-        const csv = [
-          Object.keys(data[0]).join(','),
-          ...data.map(row => Object.values(row).join(','))
-        ].join('\n');
-        
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `alert-history-${sessionId}-${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
+    try {
+      if (onExport) {
+        onExport(format);
       } else {
-        const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `alert-history-${sessionId}-${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        // Default export implementation
+        const data = sortedEntries.map(entry => ({
+          timestamp: safeParseDate(entry.lastOccurrence)?.toISOString() || 'Invalid Date',
+          type: entry.type,
+          severity: entry.severity,
+          message: entry.message,
+          eventCount: entry.eventCount,
+          duration: safeFormatDuration(entry.firstOccurrence, entry.lastOccurrence),
+          firstOccurrence: safeParseDate(entry.firstOccurrence)?.toISOString() || 'Invalid Date',
+          lastOccurrence: safeParseDate(entry.lastOccurrence)?.toISOString() || 'Invalid Date'
+        }));
+        
+        if (format === 'csv') {
+          const csv = [
+            Object.keys(data[0]).join(','),
+            ...data.map(row => Object.values(row).join(','))
+          ].join('\n');
+          
+          const blob = new Blob([csv], { type: 'text/csv' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `alert-history-${sessionId}-${new Date().toISOString().split('T')[0]}.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+        } else {
+          const json = JSON.stringify(data, null, 2);
+          const blob = new Blob([json], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `alert-history-${sessionId}-${new Date().toISOString().split('T')[0]}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
       }
+    } catch (error) {
+      console.error('Error exporting alert history:', error);
+      // Could show a user-friendly error message here
     }
   };
 
   return (
-    <div className={`bg-white rounded-lg shadow-sm border ${className}`}>
+    <ErrorBoundary
+      fallback={
+        <div className={`bg-white rounded-lg shadow-sm border p-6 ${className}`}>
+          <div className="text-center">
+            <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-2" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Alert History Unavailable</h3>
+            <p className="text-sm text-gray-600">
+              There was an error loading the alert history. Please try refreshing the page.
+            </p>
+          </div>
+        </div>
+      }
+    >
+      <div className={`bg-white rounded-lg shadow-sm border ${className}`}>
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between mb-4">
@@ -351,15 +379,15 @@ export const AlertHistory: React.FC<AlertHistoryProps> = ({
                         
                         <div className="flex items-center space-x-4 text-xs text-gray-500">
                           <span>
-                            Last: {formatTimestamp(entry.lastOccurrence)}
+                            Last: {safeFormatDate(entry.lastOccurrence)}
                           </span>
                           {entry.eventCount > 1 && (
                             <>
                               <span>
-                                First: {formatTimestamp(entry.firstOccurrence)}
+                                First: {safeFormatDate(entry.firstOccurrence)}
                               </span>
                               <span>
-                                Duration: {formatDuration(entry.firstOccurrence, entry.lastOccurrence)}
+                                Duration: {safeFormatDuration(entry.firstOccurrence, entry.lastOccurrence)}
                               </span>
                             </>
                           )}
@@ -388,5 +416,6 @@ export const AlertHistory: React.FC<AlertHistoryProps> = ({
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 };

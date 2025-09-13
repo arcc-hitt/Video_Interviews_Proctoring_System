@@ -216,40 +216,8 @@ export const useComputerVision = ({
                 const focusStatus = faceServiceRef.current!.checkFocusStatus(gazeDirection, faceResult.faces.length);
                 setCurrentFocusStatus(focusStatus);
                 
-                // Process focus events immediately for real-time response
-                if (focusStatus.faceCount === 0 && sessionId && candidateId) {
-                  const detectionEvent: DetectionEvent = {
-                    sessionId,
-                    candidateId,
-                    eventType: 'absence',
-                    timestamp: new Date(),
-                    confidence: 0.95,
-                    metadata: {
-                      faceCount: 0,
-                      description: 'Candidate not visible in camera frame',
-                      eventSource: 'computer-vision'
-                    }
-                  };
-                  if (onDetectionEvent) {
-                    onDetectionEvent(detectionEvent);
-                  }
-                } else if (focusStatus.faceCount > 1 && sessionId && candidateId) {
-                  const detectionEvent: DetectionEvent = {
-                    sessionId,
-                    candidateId,
-                    eventType: 'multiple-faces',
-                    timestamp: new Date(),
-                    confidence: 0.95,
-                    metadata: {
-                      faceCount: focusStatus.faceCount,
-                      description: `Multiple faces detected: ${focusStatus.faceCount} faces`,
-                      eventSource: 'computer-vision'
-                    }
-                  };
-                  if (onDetectionEvent) {
-                    onDetectionEvent(detectionEvent);
-                  }
-                }
+                // Note: Face detection alerts (absence, multiple-faces, focus-loss) are handled 
+                // by the dedicated BlazeFace service to avoid conflicts and ensure consistency
                 
                 return focusStatus;
               }
@@ -383,12 +351,10 @@ function mapFocusEventToDetectionType(focusEventType: FocusEvent['type']): Detec
       return 'focus-loss';
     case 'absence':
       return 'absence';
+    case 'face-visible':
+      return 'face-visible';
     case 'multiple-faces':
       return 'multiple-faces';
-    case 'focus-restored':
-    case 'presence-restored':
-      // These are positive events, we might want to log them differently
-      return 'focus-loss'; // For now, treat as focus-loss with different metadata
     default:
       return 'focus-loss';
   }

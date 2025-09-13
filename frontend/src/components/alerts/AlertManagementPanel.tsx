@@ -2,6 +2,8 @@ import React, { useState, useCallback } from 'react';
 import type { Alert } from '../../types';
 import { AlertTriangle, Flag, CheckCircle, History, Plus, FileText } from 'lucide-react';
 import { AlertHistory } from './AlertHistory';
+import { safeFormatTime } from '../../utils/dateUtils';
+import { ErrorBoundary } from '../error/ErrorBoundary';
 
 interface AlertManagementPanelProps {
   alerts: Alert[];
@@ -80,15 +82,8 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
     }
   };
 
-  // Format timestamp
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-  };
+  // Format timestamp (replaced with safe utility function)
+  // Using safeFormatTime utility to prevent crashes
 
   // Get alert icon
   const getAlertIcon = (type: string) => {
@@ -107,7 +102,20 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
   };
 
   return (
-    <div className={`bg-white rounded-lg shadow-sm border ${className}`}>
+    <ErrorBoundary
+      fallback={
+        <div className={`bg-white rounded-lg shadow-sm border p-6 ${className}`}>
+          <div className="text-center">
+            <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-2" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Alert Management Unavailable</h3>
+            <p className="text-sm text-gray-600">
+              There was an error loading the alert management panel. Please try refreshing the page.
+            </p>
+          </div>
+        </div>
+      }
+    >
+      <div className={`bg-white rounded-lg shadow-sm border ${className}`}>
       {/* Header with Tabs */}
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between mb-4">
@@ -262,7 +270,7 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
                           {alert.severity?.toUpperCase() || 'UNKNOWN'}
                         </span>
                         <span className="text-xs text-gray-500">
-                          {formatTime(alert.timestamp)}
+                          {safeFormatTime(alert.timestamp)}
                         </span>
                       </div>
                       
@@ -317,7 +325,7 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
                     <div className="flex-1">
                       <p className="text-sm font-medium">{note.note}</p>
                       <p className="text-xs mt-1 opacity-75">
-                        {formatTime(note.timestamp)}
+                        {safeFormatTime(note.timestamp)}
                       </p>
                     </div>
                     <Flag className="w-4 h-4 ml-2 opacity-60" />
@@ -344,5 +352,6 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   );
 };

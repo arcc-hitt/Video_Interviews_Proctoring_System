@@ -13,24 +13,17 @@ export const CandidateDashboard: React.FC = () => {
 
   const handleJoinSession = () => {
     if (sessionId.trim()) {
-      console.log('CandidateDashboard: Joining session with ID:', sessionId);
       setShowInterface(true);
-    } else {
-      console.log('CandidateDashboard: No session ID provided');
     }
   };
 
   const handleSessionEnd = () => {
-    console.log('CandidateDashboard: handleSessionEnd called - returning to dashboard');
-    console.log('CandidateDashboard: Before state change - showInterface:', showInterface, 'sessionId:', sessionId);
     setShowInterface(false);
     setSessionId('');
-    console.log('CandidateDashboard: State change triggered - should return to dashboard');
   };
 
   // If showing the interview interface, render it
   if (showInterface) {
-    console.log('CandidateDashboard: Rendering CandidateInterface with sessionId:', sessionId);
     return (
       <CandidateInterface 
         sessionId={sessionId}
@@ -38,8 +31,6 @@ export const CandidateDashboard: React.FC = () => {
       />
     );
   }
-
-  console.log('CandidateDashboard: Rendering dashboard, showInterface:', showInterface);
 
   return (
     <div className="min-h-screen bg-gray-50">

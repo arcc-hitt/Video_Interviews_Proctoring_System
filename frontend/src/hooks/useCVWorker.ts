@@ -50,7 +50,6 @@ export const useCVWorker = (options: UseCVWorkerOptions = {}): UseCVWorkerReturn
   // Initialize worker
   const initialize = useCallback(async (): Promise<void> => {
     if (workerRef.current || isInitializing.current) {
-      console.log('CV Worker: Already initialized or initializing, skipping...');
       return; // Already initialized or initializing
     }
 
@@ -75,7 +74,6 @@ export const useCVWorker = (options: UseCVWorkerOptions = {}): UseCVWorkerReturn
           // For initialization errors related to CORS/model loading, 
           // don't treat as fatal - just log and continue
           if (workerError.includes('Failed to fetch') || workerError.includes('CORS')) {
-            console.warn('CV Worker model loading failed (non-fatal):', workerError);
             // Still mark as initialized so the worker can process frames without object detection
             setIsInitialized(true);
           } else {
@@ -113,7 +111,7 @@ export const useCVWorker = (options: UseCVWorkerOptions = {}): UseCVWorkerReturn
             break;
 
           default:
-            console.warn('Unknown worker message type:', type);
+            break;
         }
       };
 

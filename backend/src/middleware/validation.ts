@@ -329,11 +329,6 @@ export const validateZod = (schema: z.ZodTypeAny, property: 'body' | 'query' | '
           body: JSON.stringify(data, null, 2)
         });
 
-        console.log('Zod Validation Error Details:', {
-          errors: validationErrors,
-          requestBody: data
-        });
-
         throw new ValidationError('Validation failed');
       }
       throw error;

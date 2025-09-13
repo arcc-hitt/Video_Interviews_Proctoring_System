@@ -18,10 +18,18 @@ interface TimerState {
   isActive: boolean;
 }
 
-// New state for smoothing detection results
+//New state for smoothing detection results
 interface DetectionState {
   frameCount: number;
   triggered: boolean;
+}
+
+// Enhanced state for better detection stability
+interface FaceDetectionHistory {
+  recentFaceCounts: number[]; // Last few face counts
+  stableFaceCount: number;    // Most consistent face count
+  confidenceSum: number;      // Sum of recent confidences
+  frameBuffer: number;        // Number of frames to buffer
 }
 
 export class BlazeFaceDetectionService implements FocusDetectionService {
@@ -37,12 +45,27 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
   // State for smoothing detection
   private absenceState: DetectionState = { frameCount: 0, triggered: false };
   private multipleFacesState: DetectionState = { frameCount: 0, triggered: false };
+  
+  // Enhanced detection history for stability
+  private detectionHistory: FaceDetectionHistory = {
+    recentFaceCounts: [],
+    stableFaceCount: 0,
+    confidenceSum: 0,
+    frameBuffer: 5 // Consider last 5 frames
+  };
+
+  // Warmup and stability tracking
+  private isWarmingUp = true;
+  private warmupFrameCount = 0;
+  private readonly WARMUP_FRAMES = 30; // Wait 30 frames before triggering alerts (~1 second at 30fps)
 
   // Configuration constants
   private readonly FOCUS_LOSS_THRESHOLD = 5000; // 5 seconds
-  private readonly ABSENCE_THRESHOLD = 3; // 3 consecutive frames
-  private readonly MULTIPLE_FACES_THRESHOLD = 5; // 5 consecutive frames
-  private readonly GAZE_THRESHOLD = 0.3; // Threshold for determining if looking at screen
+  private readonly ABSENCE_THRESHOLD = 8; // 8 consecutive frames (more lenient)
+  private readonly MULTIPLE_FACES_THRESHOLD = 10; // 10 consecutive frames (more stable)
+  private readonly GAZE_THRESHOLD = 0.4; // Threshold for determining if looking at screen (more lenient)
+  private readonly MIN_FACE_CONFIDENCE = 0.75; // Increased confidence for better detection
+  private readonly MIN_FACE_SIZE = 0.04; // Minimum face size as percentage of image (5%)
 
   public onFocusEvent?: (event: FocusEvent) => void;
 
@@ -83,8 +106,6 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
 
   private async initializeBlazeFace(): Promise<void> {
     try {
-      console.log('Initializing TensorFlow.js BlazeFace...');
-      
       // Set TensorFlow.js backend
       await tf.setBackend('webgl');
       await tf.ready();
@@ -93,7 +114,6 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       this.model = await blazeface.load();
       
       this.isInitialized = true;
-      console.log('BlazeFace model loaded successfully');
     } catch (error) {
       console.error('Failed to initialize BlazeFace:', error);
       this.isInitialized = false;
@@ -118,8 +138,10 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       // Create tensor from ImageData
       const tensor = tf.browser.fromPixels(imageData);
       
-      // Detect faces
-      const predictions = await this.model.estimateFaces(tensor, false);
+      // Detect faces with higher tolerance during warmup
+      const returnTensors = false;
+      const flipHorizontal = false;
+      const predictions = await this.model.estimateFaces(tensor, returnTensors, flipHorizontal);
       
       // Clean up tensor
       tensor.dispose();
@@ -130,6 +152,16 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
 
       if (predictions && predictions.length > 0) {
         predictions.forEach((prediction: any) => {
+          const confidence = prediction.probability || 0.8; // BlazeFace provides probability
+          
+          // Use more lenient confidence during warmup to help with initialization
+          const effectiveMinConfidence = this.isWarmingUp ? 0.5 : this.MIN_FACE_CONFIDENCE;
+          
+          // Filter out low-confidence detections
+          if (confidence < effectiveMinConfidence) {
+            return; // Skip this detection
+          }
+
           const boundingBox: BoundingBox = {
             x: prediction.topLeft[0],
             y: prediction.topLeft[1],
@@ -137,7 +169,16 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
             height: prediction.bottomRight[1] - prediction.topLeft[1]
           };
 
-          const confidence = prediction.probability || 0.8; // BlazeFace provides probability
+          // Calculate face size as percentage of image area
+          const faceArea = (boundingBox.width * boundingBox.height) / (imageData.width * imageData.height);
+          
+          // Use more lenient size filtering during warmup
+          const effectiveMinSize = this.isWarmingUp ? 0.02 : this.MIN_FACE_SIZE;
+          
+          // Filter out very small detections (likely false positives)
+          if (faceArea < effectiveMinSize) {
+            return; // Skip this detection
+          }
 
           // Extract landmarks if available
           const faceLandmarks: FaceLandmarks[] = [];
@@ -265,16 +306,76 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     this.clearTimer(timer);
   }
 
+  private updateDetectionHistory(faceCount: number, confidence: number): number {
+    // Add current detection to history
+    this.detectionHistory.recentFaceCounts.push(faceCount);
+    this.detectionHistory.confidenceSum += confidence;
+    
+    // Keep only the last N frames
+    if (this.detectionHistory.recentFaceCounts.length > this.detectionHistory.frameBuffer) {
+      this.detectionHistory.recentFaceCounts.shift();
+    }
+    
+    // Calculate the most stable face count from recent history
+    const counts = this.detectionHistory.recentFaceCounts;
+    const countFrequency: { [key: number]: number } = {};
+    
+    // Count frequency of each face count
+    counts.forEach(count => {
+      countFrequency[count] = (countFrequency[count] || 0) + 1;
+    });
+    
+    // Find the most frequent count (mode)
+    let maxFreq = 0;
+    let stableCount = faceCount; // Default to current if no clear mode
+    
+    Object.entries(countFrequency).forEach(([count, freq]) => {
+      if (freq > maxFreq) {
+        maxFreq = freq;
+        stableCount = parseInt(count);
+      }
+    });
+    
+    this.detectionHistory.stableFaceCount = stableCount;
+    return stableCount;
+  }
+
   private processFocusTracking(result: FaceDetectionResult): void {
-    const faceCount = result.faces.length;
+    const rawFaceCount = result.faces.length;
     const currentTime = new Date();
     
-    if (faceCount === 0) {
-      // No face detected
+    // Handle warmup period - don't trigger alerts during initial frames
+    this.warmupFrameCount++;
+    if (this.warmupFrameCount <= this.WARMUP_FRAMES) {
+      this.isWarmingUp = true;
+      // Still update detection history during warmup for smoother transition
+      this.updateDetectionHistory(rawFaceCount, result.confidence);
+      
+      // Log warmup progress every 10 frames
+      if (this.warmupFrameCount % 10 === 0) {
+        console.log(`Face detection warmup: ${this.warmupFrameCount}/${this.WARMUP_FRAMES} frames (${Math.round((this.warmupFrameCount / this.WARMUP_FRAMES) * 100)}%)`);
+      }
+      
+      return; // Skip alert triggering during warmup
+    } else if (this.isWarmingUp) {
+      // Just finished warmup
+      this.isWarmingUp = false;
+      console.log('Face detection warmup completed - alerts now active');
+    }
+    
+    // Use detection history for more stable face counting
+    const stableFaceCount = this.updateDetectionHistory(rawFaceCount, result.confidence);
+    
+    if (stableFaceCount === 0) {
+      // No face detected (stable)
       this.multipleFacesState = { frameCount: 0, triggered: false }; // Reset multiple faces
       this.absenceState.frameCount++;
 
-      if (this.absenceState.frameCount >= this.ABSENCE_THRESHOLD && !this.absenceState.triggered) {
+      // Use more lenient thresholds shortly after warmup
+      const isRecentlyWarmedUp = this.warmupFrameCount <= (this.WARMUP_FRAMES + 60); // First 3 seconds after warmup
+      const effectiveAbsenceThreshold = isRecentlyWarmedUp ? this.ABSENCE_THRESHOLD * 2 : this.ABSENCE_THRESHOLD;
+
+      if (this.absenceState.frameCount >= effectiveAbsenceThreshold && !this.absenceState.triggered) {
         this.absenceState.triggered = true;
         this.emitFocusEvent({
           type: 'absence',
@@ -289,8 +390,8 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       
       this.stopFocusTimer('looking-away');
       
-    } else if (faceCount > 1) {
-      // Multiple faces detected
+    } else if (stableFaceCount > 1) {
+      // Multiple faces detected (stable)
       this.absenceState = { frameCount: 0, triggered: false }; // Reset absence
       this.multipleFacesState.frameCount++;
 
@@ -301,7 +402,7 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
           timestamp: currentTime,
           confidence: result.confidence,
           metadata: {
-            faceCount,
+            faceCount: stableFaceCount,
             previousState: this.currentFocusStatus ? (this.currentFocusStatus.isFocused ? 'focused' : 'unfocused') : 'unknown'
           }
         });
@@ -311,69 +412,72 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       this.stopFocusTimer('absent');
       
     } else {
-      // Single face detected
+      // Single face detected (stable)
       // Reset both absence and multiple faces state
       if (this.absenceState.triggered) {
-        // If absence was triggered, we can consider this a "restored" event
+        // If absence was triggered, emit face-visible event to notify interviewer
         this.emitFocusEvent({
-          type: 'focus-restored',
+          type: 'face-visible',
           timestamp: currentTime,
-          confidence: result.faces[0].confidence,
+          confidence: result.faces[0]?.confidence || 0.8,
           metadata: {
             faceCount: 1,
-            previousState: 'unfocused'
+            previousState: 'absent'
           }
         });
       }
+      
+      if (this.multipleFacesState.triggered) {
+        // If multiple faces was triggered, also emit face-visible for clarity
+        this.emitFocusEvent({
+          type: 'face-visible',
+          timestamp: currentTime,
+          confidence: result.faces[0]?.confidence || 0.8,
+          metadata: {
+            faceCount: 1,
+            previousState: 'multiple-faces'
+          }
+        });
+      }
+      
       this.absenceState = { frameCount: 0, triggered: false };
       this.multipleFacesState = { frameCount: 0, triggered: false };
 
-      const face = result.faces[0];
-      const gazeDirection = this.trackGazeDirection(face.landmarks);
-      const focusStatus = this.checkFocusStatus(gazeDirection, faceCount);
-      
-      // Check if focus state changed
-      const wasFocused = this.currentFocusStatus?.isFocused || false;
-      const isNowFocused = focusStatus.isFocused;
-      
-      this.currentFocusStatus = focusStatus;
-      
-      if (isNowFocused) {
-        // Currently focused - stop all timers
-        this.stopFocusTimer('looking-away');
-        this.stopFocusTimer('absent');
+      // Only process gaze tracking if we have actual face data
+      if (result.faces.length > 0) {
+        const face = result.faces[0];
+        const gazeDirection = this.trackGazeDirection(face.landmarks);
+        const focusStatus = this.checkFocusStatus(gazeDirection, 1); // Use actual count of 1
         
-        // If we were not focused before, emit focus-restored event
-        if (!wasFocused) {
-          this.emitFocusEvent({
-            type: 'focus-restored',
-            timestamp: currentTime,
-            confidence: focusStatus.confidence,
-            metadata: {
-              faceCount: 1,
-              gazeDirection: focusStatus.gazeDirection,
-              previousState: wasFocused ? 'focused' : 'unfocused'
-            }
-          });
-        }
-      } else {
-        // Not focused - start looking-away timer
-        this.stopFocusTimer('absent');
-        this.startFocusTimer('looking-away');
+        // Check if focus state changed
+        const wasFocused = this.currentFocusStatus?.isFocused || false;
+        const isNowFocused = focusStatus.isFocused;
         
-        // If focus was just lost, emit immediate event
-        if (wasFocused) {
-          this.emitFocusEvent({
-            type: 'focus-loss',
-            timestamp: currentTime,
-            duration: 0, // Immediate detection
-            confidence: focusStatus.confidence,
-            metadata: {
-              faceCount: 1,
-              gazeDirection: focusStatus.gazeDirection,
-              previousState: 'focused'
-            }
-          });
+        this.currentFocusStatus = focusStatus;
+        
+        if (isNowFocused) {
+          // Currently focused - stop all timers
+          this.stopFocusTimer('looking-away');
+          this.stopFocusTimer('absent');
+        } else {
+          // Not focused - start looking-away timer
+          this.stopFocusTimer('absent');
+          this.startFocusTimer('looking-away');
+          
+          // If focus was just lost, emit immediate event
+          if (wasFocused) {
+            this.emitFocusEvent({
+              type: 'focus-loss',
+              timestamp: currentTime,
+              duration: 0, // Immediate detection
+              confidence: focusStatus.confidence,
+              metadata: {
+                faceCount: 1,
+                gazeDirection: focusStatus.gazeDirection,
+                previousState: 'focused'
+              }
+            });
+          }
         }
       }
     }
@@ -389,7 +493,6 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
   }
 
   private emitFocusEvent(event: FocusEvent): void {
-    console.log('Focus event:', event);
     if (this.onFocusEvent) {
       this.onFocusEvent(event);
     }
@@ -399,13 +502,28 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     this.clearTimer(this.focusLossTimer);
     this.clearTimer(this.absenceTimer);
     
+    // Reset detection history
+    this.detectionHistory = {
+      recentFaceCounts: [],
+      stableFaceCount: 0,
+      confidenceSum: 0,
+      frameBuffer: 5
+    };
+    
+    // Reset warmup state
+    this.isWarmingUp = true;
+    this.warmupFrameCount = 0;
+    
+    // Reset detection states
+    this.absenceState = { frameCount: 0, triggered: false };
+    this.multipleFacesState = { frameCount: 0, triggered: false };
+    
     if (this.model) {
       // BlazeFace models don't need explicit disposal
       this.model = null;
     }
     
     this.isInitialized = false;
-    console.log('BlazeFace detection service cleaned up');
   }
 
   public getCurrentFocusStatus(): FocusStatus | null {
@@ -414,6 +532,18 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
 
   public getIsInitialized(): boolean {
     return this.isInitialized;
+  }
+
+  public getIsWarmingUp(): boolean {
+    return this.isWarmingUp;
+  }
+
+  public getWarmupProgress(): { current: number; total: number; percentage: number } {
+    return {
+      current: this.warmupFrameCount,
+      total: this.WARMUP_FRAMES,
+      percentage: Math.min(100, (this.warmupFrameCount / this.WARMUP_FRAMES) * 100)
+    };
   }
 }
 

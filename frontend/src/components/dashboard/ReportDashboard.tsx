@@ -19,6 +19,13 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react';
+import { 
+  safeParseDate, 
+  safeFormatDate, 
+  safeToDateWithFallback,
+  safeFormatTime
+} from '../../utils/dateUtils';
+import { ErrorBoundary } from '../error/ErrorBoundary';
 
 interface ReportDashboardProps {
   sessionId: string;
@@ -29,6 +36,19 @@ interface ReportDashboardProps {
 
 interface LiveSessionSummary {
   integrityScore: number;
+  integrityBreakdown?: {
+    baseScore: number;
+    deductions: {
+      focusLoss: number;
+      absence: number;
+      multipleFaces: number;
+      unauthorizedItems: number;
+      manualObservations: number;
+      total: number;
+    };
+    finalScore: number;
+    formula: string;
+  };
   totalEvents: number;
   focusLossCount: number;
   absenceCount: number;
@@ -92,47 +112,111 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
 
   // Calculate session duration in real-time
   const sessionDuration = useMemo(() => {
-    if (!session.startTime) return 0;
-    const start = new Date(session.startTime);
-    const now = session.endTime ? new Date(session.endTime) : new Date();
-    return Math.floor((now.getTime() - start.getTime()) / 1000);
+    try {
+      if (!session.startTime) return 0;
+      const start = safeParseDate(session.startTime);
+      const end = session.endTime ? safeParseDate(session.endTime) : new Date();
+      
+      if (!start || !end) return 0;
+      
+      return Math.floor((end.getTime() - start.getTime()) / 1000);
+    } catch (error) {
+      console.warn('Error calculating session duration:', error);
+      return 0;
+    }
   }, [session.startTime, session.endTime]);
 
   // Calculate live summary from alerts and events
-  const calculateLiveSummary = useCallback((events: DetectionEvent[], observations: ManualObservation[]) => {
-    const eventCounts = {
-      focusLoss: events.filter(e => e.eventType === 'focus-loss').length,
-      absence: events.filter(e => e.eventType === 'absence').length,
-      multipleFaces: events.filter(e => e.eventType === 'multiple-faces').length,
-      unauthorizedItems: events.filter(e => e.eventType === 'unauthorized-item').length
-    };
+  const calculateLiveSummary = useCallback((events: DetectionEvent[], observations: ManualObservation[]): LiveSessionSummary => {
+    try {
+      // Validate inputs
+      const safeEvents = Array.isArray(events) ? events : [];
+      const safeObservations = Array.isArray(observations) ? observations : [];
 
-    // Calculate integrity score
+      const eventCounts = {
+        focusLoss: safeEvents.filter(e => e.eventType === 'focus-loss').length,
+        absence: safeEvents.filter(e => e.eventType === 'absence').length,
+        faceVisible: safeEvents.filter(e => e.eventType === 'face-visible').length,
+        multipleFaces: safeEvents.filter(e => e.eventType === 'multiple-faces').length,
+        unauthorizedItems: safeEvents.filter(e => e.eventType === 'unauthorized-item').length
+      };
+
+    // Calculate integrity score and detailed breakdown
     let integrityScore = 100;
-    integrityScore -= eventCounts.focusLoss * 2;
-    integrityScore -= eventCounts.absence * 5;
-    integrityScore -= eventCounts.multipleFaces * 10;
-    integrityScore -= eventCounts.unauthorizedItems * 15;
+    const focusLossDeduction = eventCounts.focusLoss * 2;
+    const absenceDeduction = eventCounts.absence * 5;
+    const multipleFacesDeduction = eventCounts.multipleFaces * 10;
+    const unauthorizedItemsDeduction = eventCounts.unauthorizedItems * 15;
+
+    integrityScore -= focusLossDeduction;
+    integrityScore -= absenceDeduction;
+    integrityScore -= multipleFacesDeduction;
+    integrityScore -= unauthorizedItemsDeduction;
 
     // Deduct for flagged manual observations
-    const flaggedObservations = observations.filter(obs => obs.flagged);
+    const flaggedObservations = safeObservations.filter(obs => obs.flagged);
+    let manualObservationsDeduction = 0;
     flaggedObservations.forEach(obs => {
       switch (obs.severity) {
-        case 'low': integrityScore -= 2; break;
-        case 'medium': integrityScore -= 5; break;
-        case 'high': integrityScore -= 10; break;
+        case 'low': manualObservationsDeduction += 2; break;
+        case 'medium': manualObservationsDeduction += 5; break;
+        case 'high': manualObservationsDeduction += 10; break;
       }
     });
 
+    integrityScore -= manualObservationsDeduction;
     integrityScore = Math.max(0, integrityScore);
 
-    const lastEventTime = events.length > 0 
-      ? new Date(Math.max(...events.map(e => new Date(e.timestamp).getTime())))
+    // Create detailed breakdown
+    const totalDeductions = focusLossDeduction + absenceDeduction + multipleFacesDeduction + unauthorizedItemsDeduction + manualObservationsDeduction;
+    
+    // Create readable formula
+    const deductionParts = [];
+    if (focusLossDeduction > 0) deductionParts.push(`${eventCounts.focusLoss} focus loss (${focusLossDeduction})`);
+    if (absenceDeduction > 0) deductionParts.push(`${eventCounts.absence} absence (${absenceDeduction})`);
+    if (multipleFacesDeduction > 0) deductionParts.push(`${eventCounts.multipleFaces} multiple faces (${multipleFacesDeduction})`);
+    if (unauthorizedItemsDeduction > 0) deductionParts.push(`${eventCounts.unauthorizedItems} unauthorized items (${unauthorizedItemsDeduction})`);
+    if (manualObservationsDeduction > 0) deductionParts.push(`${flaggedObservations.length} manual flags (${manualObservationsDeduction})`);
+    
+    const formula = deductionParts.length > 0 
+      ? `100 - [${deductionParts.join(' + ')}] = ${integrityScore}`
+      : `100 - 0 = ${integrityScore}`;
+
+    const integrityBreakdown = {
+      baseScore: 100,
+      deductions: {
+        focusLoss: focusLossDeduction,
+        absence: absenceDeduction,
+        multipleFaces: multipleFacesDeduction,
+        unauthorizedItems: unauthorizedItemsDeduction,
+        manualObservations: manualObservationsDeduction,
+        total: totalDeductions
+      },
+      finalScore: integrityScore,
+      formula
+    };
+
+    const lastEventTime = safeEvents.length > 0 
+      ? (() => {
+          try {
+            const validTimestamps = safeEvents
+              .map(e => safeParseDate(e.timestamp)?.getTime())
+              .filter(time => time !== null && time !== undefined);
+            
+            return validTimestamps.length > 0 
+              ? new Date(Math.max(...validTimestamps)) 
+              : undefined;
+          } catch (error) {
+            console.warn('Error calculating last event time:', error);
+            return undefined;
+          }
+        })()
       : undefined;
 
     return {
       integrityScore,
-      totalEvents: events.length,
+      integrityBreakdown,
+      totalEvents: safeEvents.length,
       focusLossCount: eventCounts.focusLoss,
       absenceCount: eventCounts.absence,
       multipleFacesCount: eventCounts.multipleFaces,
@@ -140,6 +224,20 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
       sessionDuration,
       lastEventTime
     };
+  } catch (error) {
+    console.error('Error calculating live summary:', error);
+    // Return safe default values
+    return {
+      integrityScore: 0,
+      totalEvents: 0,
+      focusLossCount: 0,
+      absenceCount: 0,
+      multipleFacesCount: 0,
+      unauthorizedItemsCount: 0,
+      sessionDuration: 0,
+      lastEventTime: undefined
+    };
+  }
   }, [sessionDuration]);
 
   // Fetch detection events for the session
@@ -154,11 +252,9 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Detection events API response:', data); // Debug log
         if (data.success) {
           // Handle paginated response structure
           const events = data.data?.items || data.data || [];
-          console.log('Parsed events:', events); // Debug log
           setDetectionEvents(Array.isArray(events) ? events : []);
         } else {
           console.warn('API returned success=false:', data);
@@ -379,22 +475,44 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
 
   // Real-time updates from alerts
   useEffect(() => {
-    // Convert alerts to detection events for real-time updates
-    const alertEvents: DetectionEvent[] = alerts.map((alert) => ({
-      sessionId,
-      candidateId: session.candidateId,
-      eventType: alert.type,
-      timestamp: alert.timestamp,
-      confidence: 0.8, // Default confidence for alerts
-      metadata: {}
-    }));
+    if (!alerts.length || !sessionId || !session.candidateId) return;
+    
+    try {
+      const alertEvents: DetectionEvent[] = alerts.map((alert) => {
+        const safeTimestamp = safeToDateWithFallback(alert.timestamp);
+        return {
+          sessionId,
+          candidateId: session.candidateId,
+          eventType: alert.type,
+          timestamp: safeTimestamp,
+          confidence: alert.confidence || 0.8, // Default confidence for alerts
+          metadata: alert.metadata || {}
+        };
+      });
 
-    // Merge with existing events, avoiding duplicates
-    setDetectionEvents(prev => {
-      const existingTimestamps = new Set(prev.map(e => e.timestamp.getTime()));
-      const newEvents = alertEvents.filter(e => !existingTimestamps.has(new Date(e.timestamp).getTime()));
-      return [...prev, ...newEvents];
-    });
+      // Merge with existing events, avoiding duplicates
+      setDetectionEvents(prev => {
+        try {
+          const existingTimestamps = new Set(
+            prev
+              .map(e => safeParseDate(e.timestamp)?.getTime())
+              .filter(time => time !== null && time !== undefined)
+          );
+          
+          const newEvents = alertEvents.filter(e => {
+            const eventTime = safeParseDate(e.timestamp)?.getTime();
+            return eventTime && !existingTimestamps.has(eventTime);
+          });
+          
+          return [...prev, ...newEvents];
+        } catch (error) {
+          console.warn('Error merging detection events:', error);
+          return prev; // Return previous state if merging fails
+        }
+      });
+    } catch (error) {
+      console.error('Error converting alerts to detection events:', error);
+    }
   }, [alerts, sessionId, session.candidateId]);
 
   if (isLoading) {
@@ -409,7 +527,28 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <ErrorBoundary
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Report Dashboard Error</h2>
+            <p className="text-gray-600 mb-4">
+              There was an error loading the report dashboard. Please try refreshing the page.
+            </p>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                Go Back
+              </button>
+            )}
+          </div>
+        </div>
+      }
+    >
+      <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -434,13 +573,18 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
             
             <div className="flex items-center space-x-3">
               <div className="text-right">
-                <div className="text-sm text-gray-500">Integrity Score</div>
+                <div className="text-sm text-gray-500">Final Integrity Score</div>
                 <div className={`text-2xl font-bold ${
                   liveSummary.integrityScore >= 80 ? 'text-green-600' :
                   liveSummary.integrityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
                 }`}>
                   {liveSummary.integrityScore}/100
                 </div>
+                {liveSummary.integrityBreakdown && (
+                  <div className="text-xs text-gray-400 mt-1">
+                    Formula: 100 - {liveSummary.integrityBreakdown.deductions.total} = {liveSummary.integrityScore}
+                  </div>
+                )}
               </div>
               
               <div className="flex space-x-2">
@@ -574,7 +718,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                     <div className="ml-5 w-0 flex-1">
                       <dl>
                         <dt className="text-sm font-medium text-gray-500 truncate">
-                          Integrity Score
+                          Final Integrity Score
                         </dt>
                         <dd className={`text-lg font-medium ${
                           liveSummary.integrityScore >= 80 ? 'text-green-900' :
@@ -642,6 +786,70 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                 </div>
               </div>
 
+              {/* Detailed Integrity Score Breakdown */}
+              {liveSummary.integrityBreakdown && (
+                <div className="bg-white rounded-lg shadow">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-lg font-medium text-gray-900">Detailed Integrity Score Calculation</h3>
+                  </div>
+                  <div className="p-6">
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                      <h4 className="text-md font-semibold text-blue-900 mb-2">Formula: Final Integrity Score = 100 - Total Deductions</h4>
+                      <p className="text-blue-800 font-mono text-sm">{liveSummary.integrityBreakdown.formula}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div>
+                        <h4 className="text-md font-semibold text-gray-900 mb-3">Deduction Breakdown</h4>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
+                            <span className="text-sm font-medium text-gray-700">Focus Loss ({Math.round(liveSummary.integrityBreakdown.deductions.focusLoss / 2)} incidents × -2 pts)</span>
+                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.focusLoss}</span>
+                          </div>
+                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
+                            <span className="text-sm font-medium text-gray-700">Absence ({Math.round(liveSummary.integrityBreakdown.deductions.absence / 5)} incidents × -5 pts)</span>
+                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.absence}</span>
+                          </div>
+                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
+                            <span className="text-sm font-medium text-gray-700">Multiple Faces ({Math.round(liveSummary.integrityBreakdown.deductions.multipleFaces / 10)} incidents × -10 pts)</span>
+                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.multipleFaces}</span>
+                          </div>
+                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
+                            <span className="text-sm font-medium text-gray-700">Unauthorized Items ({Math.round(liveSummary.integrityBreakdown.deductions.unauthorizedItems / 15)} incidents × -15 pts)</span>
+                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.unauthorizedItems}</span>
+                          </div>
+                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
+                            <span className="text-sm font-medium text-gray-700">Manual Flags (variable deduction)</span>
+                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.manualObservations}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <h4 className="text-md font-semibold text-gray-900 mb-3">Score Summary</h4>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center p-3 bg-green-50 rounded-md">
+                            <span className="text-sm font-medium text-gray-700">Base Score</span>
+                            <span className="text-sm font-bold text-green-600">{liveSummary.integrityBreakdown.baseScore}</span>
+                          </div>
+                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
+                            <span className="text-sm font-medium text-gray-700">Total Deductions</span>
+                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.total}</span>
+                          </div>
+                          <div className="flex justify-between items-center p-4 bg-gray-100 border-2 border-gray-300 rounded-md">
+                            <span className="text-lg font-bold text-gray-900">Final Integrity Score</span>
+                            <span className={`text-xl font-bold ${
+                              liveSummary.integrityBreakdown.finalScore >= 80 ? 'text-green-600' :
+                              liveSummary.integrityBreakdown.finalScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                            }`}>{liveSummary.integrityBreakdown.finalScore}/100</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Violation Breakdown */}
               <div className="bg-white rounded-lg shadow">
                 <div className="px-6 py-4 border-b border-gray-200">
@@ -695,6 +903,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                             <div className="flex-shrink-0">
                               {event.eventType === 'focus-loss' && <Eye className="w-4 h-4 text-yellow-500" />}
                               {event.eventType === 'absence' && <X className="w-4 h-4 text-red-500" />}
+                              {event.eventType === 'face-visible' && <Eye className="w-4 h-4 text-green-500" />}
                               {event.eventType === 'multiple-faces' && <Users className="w-4 h-4 text-orange-500" />}
                               {event.eventType === 'unauthorized-item' && <Phone className="w-4 h-4 text-purple-500" />}
                             </div>
@@ -703,7 +912,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                                 {event.eventType.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                               </div>
                               <div className="text-xs text-gray-500">
-                                {new Date(event.timestamp).toLocaleTimeString()}
+                                {safeFormatTime(event.timestamp)}
                               </div>
                             </div>
                           </div>
@@ -755,7 +964,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                                 {event.eventType.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                               </span>
                               <span className="text-xs text-gray-500">
-                                {new Date(event.timestamp).toLocaleString()}
+                                {safeFormatDate(event.timestamp)}
                               </span>
                             </div>
                             <span className="text-xs text-gray-500">
@@ -879,7 +1088,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                               </span>
                               
                               <span className="text-xs text-gray-500">
-                                {new Date(observation.timestamp).toLocaleString()}
+                                {safeFormatDate(observation.timestamp)}
                               </span>
                               
                               {observation.flagged && (
@@ -911,5 +1120,6 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
         </div>
       </main>
     </div>
+    </ErrorBoundary>
   );
 };
