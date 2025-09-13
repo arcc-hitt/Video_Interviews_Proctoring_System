@@ -28,7 +28,6 @@ class DatabaseConnection {
    */
   public async connect(config: DatabaseConfig): Promise<void> {
     if (this.isConnected) {
-      console.log('Database already connected');
       return;
     }
 
@@ -42,14 +41,10 @@ class DatabaseConnection {
 
     while (this.connectionAttempts < this.maxRetries && !this.isConnected) {
       try {
-        console.log(`Attempting to connect to MongoDB (attempt ${this.connectionAttempts + 1}/${this.maxRetries})...`);
-        
         await mongoose.connect(config.uri, defaultOptions);
         
         this.isConnected = true;
         this.connectionAttempts = 0;
-        
-        console.log('Successfully connected to MongoDB');
         
         // Set up connection event listeners
         this.setupEventListeners();
@@ -65,7 +60,6 @@ class DatabaseConnection {
         
         // Wait before retrying with exponential backoff
         const delay = this.retryDelay * Math.pow(2, this.connectionAttempts - 1);
-        console.log(`Retrying in ${delay / 1000} seconds...`);
         await this.sleep(delay);
       }
     }
@@ -76,14 +70,12 @@ class DatabaseConnection {
    */
   public async disconnect(): Promise<void> {
     if (!this.isConnected) {
-      console.log('Database not connected');
       return;
     }
 
     try {
       await mongoose.disconnect();
       this.isConnected = false;
-      console.log('Disconnected from MongoDB');
     } catch (error) {
       console.error('Error disconnecting from MongoDB:', error);
       throw error;
@@ -115,7 +107,6 @@ class DatabaseConnection {
    */
   private setupEventListeners(): void {
     mongoose.connection.on('connected', () => {
-      console.log('MongoDB connected');
       this.isConnected = true;
     });
 
@@ -125,24 +116,20 @@ class DatabaseConnection {
     });
 
     mongoose.connection.on('disconnected', () => {
-      console.log('MongoDB disconnected');
       this.isConnected = false;
     });
 
     mongoose.connection.on('reconnected', () => {
-      console.log('MongoDB reconnected');
       this.isConnected = true;
     });
 
     // Handle application termination
     process.on('SIGINT', async () => {
-      console.log('Received SIGINT, closing MongoDB connection...');
       await this.disconnect();
       process.exit(0);
     });
 
     process.on('SIGTERM', async () => {
-      console.log('Received SIGTERM, closing MongoDB connection...');
       await this.disconnect();
       process.exit(0);
     });

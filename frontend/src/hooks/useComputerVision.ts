@@ -94,7 +94,6 @@ export const useComputerVision = ({
 
         setIsInitialized(true);
         setError(null);
-        console.log('Computer vision services initialized successfully');
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to initialize computer vision services';
         setError(errorMessage);

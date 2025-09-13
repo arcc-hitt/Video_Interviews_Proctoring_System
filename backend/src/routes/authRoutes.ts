@@ -187,9 +187,7 @@ router.post('/logout',
   async (req: Request, res: Response): Promise<void> => {
     try {
       // In a more sophisticated implementation, you might maintain a blacklist of tokens
-      // For now, we'll just log the logout event
-      console.log(`User ${req.user!.email} logged out at ${new Date().toISOString()}`);
-
+      
       const response: ApiResponse = {
         success: true,
         message: 'Logout successful'
