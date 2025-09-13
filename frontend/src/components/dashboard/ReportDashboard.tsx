@@ -165,7 +165,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
     });
 
     integrityScore -= manualObservationsDeduction;
-    integrityScore = Math.max(0, integrityScore);
+    // Allow negative scores to reflect severe violations
 
     // Create detailed breakdown
     const totalDeductions = focusLossDeduction + absenceDeduction + multipleFacesDeduction + unauthorizedItemsDeduction + manualObservationsDeduction;
@@ -192,7 +192,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
         manualObservations: manualObservationsDeduction,
         total: totalDeductions
       },
-      finalScore: integrityScore,
+      finalScore: integrityScore, // Allow negative scores
       formula
     };
 
@@ -576,15 +576,11 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                 <div className="text-sm text-gray-500">Final Integrity Score</div>
                 <div className={`text-2xl font-bold ${
                   liveSummary.integrityScore >= 80 ? 'text-green-600' :
-                  liveSummary.integrityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                  liveSummary.integrityScore >= 60 ? 'text-yellow-600' : 
+                  liveSummary.integrityScore >= 0 ? 'text-red-600' : 'text-red-900'
                 }`}>
                   {liveSummary.integrityScore}/100
                 </div>
-                {liveSummary.integrityBreakdown && (
-                  <div className="text-xs text-gray-400 mt-1">
-                    Formula: 100 - {liveSummary.integrityBreakdown.deductions.total} = {liveSummary.integrityScore}
-                  </div>
-                )}
               </div>
               
               <div className="flex space-x-2">
@@ -712,7 +708,8 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                     <div className="flex-shrink-0">
                       <TrendingUp className={`w-8 h-8 ${
                         liveSummary.integrityScore >= 80 ? 'text-green-500' :
-                        liveSummary.integrityScore >= 60 ? 'text-yellow-500' : 'text-red-500'
+                        liveSummary.integrityScore >= 60 ? 'text-yellow-500' : 
+                        liveSummary.integrityScore >= 0 ? 'text-red-500' : 'text-red-700'
                       }`} />
                     </div>
                     <div className="ml-5 w-0 flex-1">
@@ -722,7 +719,8 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                         </dt>
                         <dd className={`text-lg font-medium ${
                           liveSummary.integrityScore >= 80 ? 'text-green-900' :
-                          liveSummary.integrityScore >= 60 ? 'text-yellow-900' : 'text-red-900'
+                          liveSummary.integrityScore >= 60 ? 'text-yellow-900' : 
+                          liveSummary.integrityScore >= 0 ? 'text-red-900' : 'text-red-950'
                         }`}>
                           {liveSummary.integrityScore}/100
                         </dd>
@@ -793,10 +791,6 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                     <h3 className="text-lg font-medium text-gray-900">Detailed Integrity Score Calculation</h3>
                   </div>
                   <div className="p-6">
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                      <h4 className="text-md font-semibold text-blue-900 mb-2">Formula: Final Integrity Score = 100 - Total Deductions</h4>
-                      <p className="text-blue-800 font-mono text-sm">{liveSummary.integrityBreakdown.formula}</p>
-                    </div>
                     
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div>

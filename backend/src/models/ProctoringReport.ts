@@ -110,7 +110,6 @@ const ProctoringReportSchema = new Schema<ProctoringReportDocument>({
   integrityScore: { 
     type: Number, 
     required: true,
-    min: 0,
     max: 100
   },
   suspiciousEvents: {
@@ -147,7 +146,7 @@ ProctoringReportSchema.pre('save', function(next) {
     score -= this.absenceCount * 5;
     score -= this.multipleFacesCount * 10;
     score -= this.unauthorizedItemsCount * 15;
-    this.integrityScore = Math.max(0, score);
+    this.integrityScore = score; // Allow negative scores
   }
   next();
 });
@@ -175,8 +174,8 @@ ProctoringReportSchema.methods.calculateIntegrityScore = function(): number {
   // Unauthorized items: -15 points per incident
   score -= this.unauthorizedItemsCount * 15;
   
-  // Ensure score doesn't go below 0
-  return Math.max(0, score);
+  // Allow negative scores to reflect severe violations
+  return score;
 };
 
 ProctoringReportSchema.methods.addSuspiciousEvent = function(event: SuspiciousEvent) {
