@@ -134,6 +134,8 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       showNotification('Multiple faces detected. Please ensure only you are visible', 'warning', 5000);
     } else if (event.eventType === 'focus-loss') {
       showNotification('Please look at the screen during the interview', 'info', 3000);
+    } else if (event.eventType === 'face-visible') {
+      showNotification('Great! Your face is now visible to the interviewer', 'success', 2000);
     } else if (event.eventType === 'unauthorized-item') {
       showNotification('Unauthorized item detected. Please remove any prohibited items', 'error', 7000);
     }
