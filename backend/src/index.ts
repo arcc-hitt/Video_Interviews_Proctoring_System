@@ -62,6 +62,29 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Root endpoint
+app.get('/', (req, res) => {
+  const response: ApiResponse = {
+    success: true,
+    data: {
+      name: 'Video Proctoring System API',
+      version: '1.0.0',
+      status: 'running',
+      timestamp: new Date().toISOString(),
+      endpoints: {
+        health: '/health',
+        auth: '/api/auth',
+        sessions: '/api/sessions',
+        events: '/api/events',
+        reports: '/api/reports',
+        videos: '/api/videos'
+      }
+    },
+    message: 'Video Proctoring System Backend API is running successfully'
+  };
+  res.json(response);
+});
+
 // Import routes
 import videoRoutes from './routes/videoRoutes';
 import authRoutes from './routes/authRoutes';
@@ -75,6 +98,29 @@ app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sessions', sessionRoutes);
+
+// Debug endpoint to help with frontend configuration
+app.get('/api/debug', (req, res) => {
+  const response: ApiResponse = {
+    success: true,
+    data: {
+      timestamp: new Date().toISOString(),
+      headers: req.headers,
+      origin: req.get('origin'),
+      host: req.get('host'),
+      protocol: req.protocol,
+      url: req.url,
+      method: req.method,
+      env: {
+        NODE_ENV: process.env.NODE_ENV,
+        FRONTEND_URL: process.env.FRONTEND_URL,
+        PORT: process.env.PORT
+      }
+    },
+    message: 'Debug endpoint - this helps verify API connectivity'
+  };
+  res.json(response);
+});
 
 // 404 handler - must come before error handling middleware
 app.use((req, res, next) => {
