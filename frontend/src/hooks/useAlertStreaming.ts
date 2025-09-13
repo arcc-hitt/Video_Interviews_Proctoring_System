@@ -191,7 +191,7 @@ export const useAlertStreaming = (options: UseAlertStreamingOptions): UseAlertSt
     }
     
     const config: AlertStreamingConfig = {
-      backendUrl: options.backendUrl || import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000',
+      backendUrl: options.backendUrl || import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
       authToken: options.authToken,
       sessionId: options.sessionId,
       reconnectAttempts: maxReconnectAttempts,
