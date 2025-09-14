@@ -6,6 +6,7 @@ import { AlertManagementPanel } from '../alerts';
 import { ReportDashboard } from './ReportDashboard';
 import { useAlertStreaming } from '../../hooks/useAlertStreaming';
 import { toast } from 'sonner';
+import apiService from '../../services/apiService';
 
 interface ConnectedUsers {
   candidates: Array<{
@@ -105,21 +106,9 @@ export const InterviewerDashboard: React.FC = () => {
   // Fetch active sessions
   const fetchActiveSessions = useCallback(async () => {
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-      const response = await fetch(`${backendUrl}/api/sessions?status=active`, {
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch sessions');
-      }
-
-      const data = await response.json();
+      const data = await apiService.get<{ sessions: InterviewSession[] }>(`/api/sessions?status=active`);
       if (data.success) {
-        setActiveSessions(data.data.sessions || []);
+        setActiveSessions(data.data?.sessions || []);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch sessions');
@@ -427,19 +416,9 @@ export const InterviewerDashboard: React.FC = () => {
     
     // Fetch session details
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-      const response = await fetch(`${backendUrl}/api/sessions/${session.sessionId}`, {
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setConnectedUsers(data.data.connectedUsers);
-        }
+      const data = await apiService.get<{ connectedUsers: any }>(`/api/sessions/${session.sessionId}`);
+      if (data.success) {
+        setConnectedUsers((data.data as any)?.connectedUsers ?? null);
       }
     } catch (err) {
       console.error('Failed to fetch session details:', err);
@@ -500,16 +479,8 @@ export const InterviewerDashboard: React.FC = () => {
       }
 
       // Then update backend
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-      const response = await fetch(`${backendUrl}/api/sessions/${selectedSession.sessionId}/end`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
+      const resp = await apiService.post(`/api/sessions/${selectedSession.sessionId}/end`);
+      if (resp.success) {
         leaveSession();
         fetchActiveSessions();
       }
@@ -533,16 +504,8 @@ export const InterviewerDashboard: React.FC = () => {
       }
 
       // Then update backend
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-      const response = await fetch(`${backendUrl}/api/sessions/${selectedSession.sessionId}/terminate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
+      const resp = await apiService.post(`/api/sessions/${selectedSession.sessionId}/terminate`);
+      if (resp.success) {
         leaveSession();
         fetchActiveSessions();
       }
@@ -681,34 +644,22 @@ export const InterviewerDashboard: React.FC = () => {
     }
 
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-      const response = await fetch(`${backendUrl}/api/sessions/create`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          candidateName: newSessionData.candidateName,
-          candidateEmail: newSessionData.candidateEmail || undefined,
-          interviewerUserId: authState.user?.userId
-        })
+      const resp = await apiService.post(`/api/sessions/create`, {
+        candidateName: newSessionData.candidateName,
+        candidateEmail: newSessionData.candidateEmail || undefined,
+        interviewerUserId: authState.user?.userId
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to create session');
-      }
-
-      const data = await response.json();
-      if (data.success) {
+      if (resp.success && resp.data) {
+        const data: any = resp.data;
         setCreatedSession({
-          sessionId: data.data.sessionId,
-          candidateName: data.data.candidateName
+          sessionId: data.sessionId,
+          candidateName: data.candidateName
         });
         setNewSessionData({ candidateName: '', candidateEmail: '' });
         fetchActiveSessions(); // Refresh the sessions list
       } else {
-        throw new Error(data.message || 'Failed to create session');
+        throw new Error((resp as any).message || 'Failed to create session');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create session');

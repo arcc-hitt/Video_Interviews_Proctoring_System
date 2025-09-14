@@ -19,9 +19,7 @@ class ApiService {
   private onUnauthorized?: () => void;
 
   constructor() {
-    // Set the backend URL from environment variable
     this.baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-    // Set up global error handling for 401 responses
     this.setupResponseInterceptor();
   }
 
@@ -71,7 +69,9 @@ class ApiService {
     }
 
     try {
-      const response = await fetch(`${this.baseURL}${endpoint}`, {
+      const fullUrl = this.baseURL ? `${this.baseURL}${endpoint}` : endpoint;
+      
+      const response = await fetch(fullUrl, {
         ...restConfig,
         headers: requestHeaders,
       });

@@ -162,6 +162,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     }
 
     setSessionState(prev => ({ ...prev, isInitializing: true, error: null }));
+
     try {
       let sessionId = propSessionId;
 
@@ -339,7 +340,6 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   // Initialize WebSocket connection
   const initializeWebSocket = (sessionId: string) => {
     try {
-      // Use Socket.IO instead of raw WebSocket for consistency
       const socketUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
       const socket = io(socketUrl, {
         auth: {
