@@ -20,8 +20,22 @@ class ApiService {
 
   constructor() {
     // Ensure VITE_API_BASE_URL is treated as a string
-    const viteApiUrl = String(import.meta.env.VITE_API_BASE_URL);
-    this.baseURL = viteApiUrl || 'https://videointerviewsproctoringsystem-production.up.railway.app';
+    // Resolve base URL with safe guards for production vs development
+    const rawEnvUrl = typeof import.meta.env.VITE_API_BASE_URL === 'string' ? import.meta.env.VITE_API_BASE_URL : '';
+    const isBrowser = typeof window !== 'undefined';
+    const isLocalHost = isBrowser ? /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname) : false;
+
+    // If an env URL is provided but points to localhost while running in production (not on localhost), ignore it
+    const viteApiUrl = (!isLocalHost && /localhost|127\.0\.0\.1/.test(rawEnvUrl)) ? '' : rawEnvUrl;
+
+    if (isBrowser && !isLocalHost) {
+      // In production, prefer using relative URLs so Vercel rewrite proxies /api -> Railway
+      // If a proper (non-localhost) env URL is provided, honor it
+      this.baseURL = viteApiUrl || '';
+    } else {
+      // In development, use env URL or fall back to local backend
+      this.baseURL = viteApiUrl || 'http://localhost:5000';
+    }
     // Set up global error handling for 401 responses
     this.setupResponseInterceptor();
   }
@@ -72,7 +86,7 @@ class ApiService {
     }
 
     try {
-      const fullUrl = `${this.baseURL}${endpoint}`;
+  const fullUrl = this.baseURL ? `${this.baseURL}${endpoint}` : endpoint;
       console.log('🌐 Making API request to:', fullUrl);
       
       const response = await fetch(fullUrl, {
