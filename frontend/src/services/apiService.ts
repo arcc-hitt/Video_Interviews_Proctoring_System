@@ -21,7 +21,7 @@ class ApiService {
   constructor() {
     // Ensure VITE_API_BASE_URL is treated as a string
     const viteApiUrl = String(import.meta.env.VITE_API_BASE_URL);
-    this.baseURL = viteApiUrl || 'http://localhost:5000';
+    this.baseURL = viteApiUrl || 'https://videointerviewsproctoringsystem-production.up.railway.app';
     // Set up global error handling for 401 responses
     this.setupResponseInterceptor();
   }
