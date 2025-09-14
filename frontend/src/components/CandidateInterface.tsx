@@ -99,8 +99,6 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
 
   // Handle detection events
   function handleDetectionEvent(event: DetectionEvent) {
-    console.log('Detection event detected:', event);
-    
     // Send event to backend API for storage
     sendEventToBackend(event);
     
@@ -116,9 +114,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
         metadata: event.metadata
       };
       
-      console.log('Sending detection event via WebSocket:', wsPayload);
       wsRef.current.emit('detection_event', wsPayload);
-      console.log('Detection event broadcasted via WebSocket:', event.eventType);
     } else {
       console.warn('WebSocket not connected, detection event not broadcasted. WebSocket state:', {
         connected: wsRef.current?.connected,
@@ -158,9 +154,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
 
   // Initialize session
   const initializeSession = useCallback(async () => {
-    console.log('CandidateInterface: initializeSession called');
     if (!authState.isAuthenticated || !authState.user) {
-      console.log('CandidateInterface: User not authenticated');
       setSessionState(prev => ({
         ...prev,
         error: 'User not authenticated'
@@ -169,7 +163,6 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     }
 
     setSessionState(prev => ({ ...prev, isInitializing: true, error: null }));
-    console.log('CandidateInterface: Starting session initialization...');
 
     try {
       let sessionId = propSessionId;
@@ -384,10 +377,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   // Initialize WebSocket connection
   const initializeWebSocket = (sessionId: string) => {
     try {
-      // Use Socket.IO instead of raw WebSocket for consistency
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const wsOrigin = origin ? origin.replace(/^http/, 'ws') : '';
-  const socketUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_BASE_URL || wsOrigin || 'http://localhost:5000';
+      const socketUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
       const socket = io(socketUrl, {
         auth: {
           token: authState.token

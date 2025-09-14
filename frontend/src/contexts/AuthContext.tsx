@@ -115,8 +115,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     dispatch({ type: 'AUTH_START' });
 
     try {
-      console.log('Attempting login for:', credentials.email);
-      
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -126,7 +124,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       const data = await response.json();
-      console.log('Login response:', { status: response.status, data });
 
       if (!response.ok) {
         throw new Error(data.error || data.message || 'Login failed');
@@ -135,8 +132,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Store token and user data (backend returns data.data.token and data.data.user)
       localStorage.setItem('auth_token', data.data.token);
       localStorage.setItem('auth_user', JSON.stringify(data.data.user));
-
-      console.log('Login successful, user:', data.data.user);
 
       dispatch({
         type: 'AUTH_SUCCESS',

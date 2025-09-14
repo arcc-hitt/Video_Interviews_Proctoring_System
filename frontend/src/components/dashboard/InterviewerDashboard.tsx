@@ -129,9 +129,7 @@ export const InterviewerDashboard: React.FC = () => {
       socketRef.current = null;
     }
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const wsOrigin = origin ? origin.replace(/^http/, 'ws') : '';
-  const socketUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_BASE_URL || wsOrigin || 'http://localhost:5000';
+    const socketUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
     const socket = io(socketUrl, {
       auth: {
         token: authState.token

@@ -19,25 +19,7 @@ class ApiService {
   private onUnauthorized?: () => void;
 
   constructor() {
-    const isBrowser = typeof window !== 'undefined';
-    const isLocalHost = isBrowser ? /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname) : false;
-    
-    if (isLocalHost) {
-      // In development, use env URL or fall back to local backend
-      this.baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-    } else {
-      // In production, use empty baseURL to rely on Vercel rewrites
-      // Vercel will proxy /api/* requests to the Railway backend
-      this.baseURL = '';
-    }
-    
-    console.log('🔧 ApiService initialized:', {
-      isLocalHost,
-      baseURL: this.baseURL,
-      env: import.meta.env.VITE_API_BASE_URL
-    });
-    
-    // Set up global error handling for 401 responses
+    this.baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
     this.setupResponseInterceptor();
   }
 
@@ -87,8 +69,7 @@ class ApiService {
     }
 
     try {
-  const fullUrl = this.baseURL ? `${this.baseURL}${endpoint}` : endpoint;
-      console.log('🌐 Making API request to:', fullUrl);
+      const fullUrl = this.baseURL ? `${this.baseURL}${endpoint}` : endpoint;
       
       const response = await fetch(fullUrl, {
         ...restConfig,
