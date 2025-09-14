@@ -23,7 +23,7 @@ app.use(helmet());
 // CORS configuration for production
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? [process.env.FRONTEND_URL || 'https://video-interviews-proctoring-system.vercel.app']
+    ? [process.env.FRONTEND_URL || 'https://video-interviews-proctoring-system.vercel.app' || 'https://video-interviews-proctoring-system-rgghq7l3o.vercel.app']
     : [process.env.CORS_ORIGIN || 'http://localhost:5173'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
