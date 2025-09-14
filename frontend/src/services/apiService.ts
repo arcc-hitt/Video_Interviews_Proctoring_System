@@ -19,23 +19,24 @@ class ApiService {
   private onUnauthorized?: () => void;
 
   constructor() {
-    // Ensure VITE_API_BASE_URL is treated as a string
-    // Resolve base URL with safe guards for production vs development
-    const rawEnvUrl = typeof import.meta.env.VITE_API_BASE_URL === 'string' ? import.meta.env.VITE_API_BASE_URL : '';
     const isBrowser = typeof window !== 'undefined';
     const isLocalHost = isBrowser ? /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname) : false;
-
-    // If an env URL is provided but points to localhost while running in production (not on localhost), ignore it
-    const viteApiUrl = (!isLocalHost && /localhost|127\.0\.0\.1/.test(rawEnvUrl)) ? '' : rawEnvUrl;
-
-    if (isBrowser && !isLocalHost) {
-      // In production, prefer using relative URLs so Vercel rewrite proxies /api -> Railway
-      // If a proper (non-localhost) env URL is provided, honor it
-      this.baseURL = viteApiUrl || '';
-    } else {
+    
+    if (isLocalHost) {
       // In development, use env URL or fall back to local backend
-      this.baseURL = viteApiUrl || 'http://localhost:5000';
+      this.baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+    } else {
+      // In production, use empty baseURL to rely on Vercel rewrites
+      // Vercel will proxy /api/* requests to the Railway backend
+      this.baseURL = '';
     }
+    
+    console.log('🔧 ApiService initialized:', {
+      isLocalHost,
+      baseURL: this.baseURL,
+      env: import.meta.env.VITE_API_BASE_URL
+    });
+    
     // Set up global error handling for 401 responses
     this.setupResponseInterceptor();
   }
