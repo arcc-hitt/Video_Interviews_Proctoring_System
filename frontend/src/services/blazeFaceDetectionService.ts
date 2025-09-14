@@ -351,16 +351,10 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       // Still update detection history during warmup for smoother transition
       this.updateDetectionHistory(rawFaceCount, result.confidence);
       
-      // Log warmup progress every 10 frames
-      if (this.warmupFrameCount % 10 === 0) {
-        console.log(`Face detection warmup: ${this.warmupFrameCount}/${this.WARMUP_FRAMES} frames (${Math.round((this.warmupFrameCount / this.WARMUP_FRAMES) * 100)}%)`);
-      }
-      
       return; // Skip alert triggering during warmup
     } else if (this.isWarmingUp) {
       // Just finished warmup
       this.isWarmingUp = false;
-      console.log('Face detection warmup completed - alerts now active');
     }
     
     // Use detection history for more stable face counting
