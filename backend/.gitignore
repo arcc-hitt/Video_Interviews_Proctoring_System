@@ -10,14 +10,15 @@ build/
 
 # Environment variables
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 
 # Logs
 logs
 *.log
+
+# Uploaded recordings (local storage)
+uploads/
 
 # Runtime data
 pids
@@ -47,8 +48,7 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
-.env
+# dotenv environment variables file handled above
 
 # IDE
 .vscode/

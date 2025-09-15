@@ -11,14 +11,13 @@ build/
 */dist/
 */build/
 
-# Environment variables
+# Environment variables (ignore all env files except templates)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 */.env
-*/.env.local
+*/.env.*
+!*/.env.example
 
 # Logs
 logs
