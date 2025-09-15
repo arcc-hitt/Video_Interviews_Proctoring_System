@@ -3,8 +3,11 @@ import multer from 'multer';
 import { videoStorageService } from '../services/videoStorageService';
 import { VideoUploadSchema } from '../types';
 import { validateRequest } from '../middleware/validation';
+import createRateLimiters from '../middleware/rateLimiter';
+import { authenticate } from '../middleware/auth';
 
 const router = express.Router();
+const { upload: uploadLimiter } = createRateLimiters();
 
 /**
  * GET /api/videos/health
@@ -25,11 +28,17 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024, // 5MB per chunk
   },
   fileFilter: (req, file, cb) => {
-    // Accept video files
-    if (file.mimetype.startsWith('video/')) {
+    // Accept video files; allow octet-stream if filename looks like a supported video
+    const isVideoMime = file.mimetype.startsWith('video/');
+    const isOctet = file.mimetype === 'application/octet-stream';
+    const name = (file.originalname || '').toLowerCase();
+    const videoExts = ['.webm', '.mp4', '.mkv', '.mov'];
+    const hasVideoExt = videoExts.some(ext => name.endsWith(ext));
+
+    if (isVideoMime || (isOctet && hasVideoExt)) {
       cb(null, true);
     } else {
-      cb(new Error('Only video files are allowed'));
+      cb(new Error(`Only video files are allowed. Received mimetype=${file.mimetype} name=${file.originalname}`));
     }
   }
 });
@@ -38,7 +47,7 @@ const upload = multer({
  * POST /api/videos/upload
  * Upload video chunk
  */
-router.post('/upload', upload.single('chunk'), async (req: Request, res: Response): Promise<void> => {
+router.post('/upload', authenticate, uploadLimiter, upload.single('chunk'), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({
@@ -105,7 +114,7 @@ router.post('/upload', upload.single('chunk'), async (req: Request, res: Respons
  * GET /api/videos/upload/status/:sessionId/:candidateId
  * Get upload status
  */
-router.get('/upload/status/:sessionId/:candidateId', (req: Request, res: Response): void => {
+router.get('/upload/status/:sessionId/:candidateId', authenticate, (req: Request, res: Response): void => {
   try {
     const { sessionId, candidateId } = req.params;
 
@@ -137,7 +146,7 @@ router.get('/upload/status/:sessionId/:candidateId', (req: Request, res: Respons
  * GET /api/videos/upload/missing/:sessionId/:candidateId
  * Get missing chunks for resume functionality
  */
-router.get('/upload/missing/:sessionId/:candidateId', (req: Request, res: Response): void => {
+router.get('/upload/missing/:sessionId/:candidateId', authenticate, (req: Request, res: Response): void => {
   try {
     const { sessionId, candidateId } = req.params;
 
@@ -204,7 +213,8 @@ router.get('/:videoId', async (req: Request, res: Response): Promise<void> => {
         'Accept-Ranges': 'bytes',
         'Content-Length': result.contentLength.toString(),
         'Content-Type': result.contentType,
-        'Cache-Control': 'no-cache'
+        'Cache-Control': 'public, max-age=3600',
+        'Content-Disposition': `attachment; filename="${videoId}${result.ext || ''}"`
       });
 
       result.stream.pipe(res);
@@ -225,7 +235,8 @@ router.get('/:videoId', async (req: Request, res: Response): Promise<void> => {
         'Content-Length': result.contentLength.toString(),
         'Content-Type': result.contentType,
         'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
+        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+        'Content-Disposition': `attachment; filename="${videoId}${result.ext || ''}"`
       });
 
       result.stream.pipe(res);
@@ -244,7 +255,7 @@ router.get('/:videoId', async (req: Request, res: Response): Promise<void> => {
  * DELETE /api/videos/:videoId
  * Delete video
  */
-router.delete('/:videoId', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:videoId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { videoId } = req.params;
 
@@ -297,8 +308,7 @@ router.post('/compress/:videoId', async (req: Request, res: Response): Promise<v
 
     const { quality = 'medium' } = req.body;
 
-    // TODO: Implement video compression using FFmpeg
-    // For now, return a placeholder response
+  // Placeholder for future video compression job
 
     res.json({
       success: true,

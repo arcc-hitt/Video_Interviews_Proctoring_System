@@ -28,7 +28,7 @@ export const setWebSocketService = (service: WebSocketService) => {
 router.post('/create', authenticate, async (req, res): Promise<void> => {
   try {
     const validatedData = SessionCreationSchema.parse(req.body);
-    const { candidateName, candidateEmail, interviewerUserId } = validatedData;
+  const { candidateName, candidateEmail } = validatedData;
 
     // Verify interviewer exists and has correct role
     if (req.user?.role !== UserRole.INTERVIEWER && req.user?.role !== UserRole.ADMIN) {
@@ -68,6 +68,7 @@ router.post('/create', authenticate, async (req, res): Promise<void> => {
       candidateId,
       candidateName,
       candidateEmail,
+      interviewerId: req.user?.userId,
       startTime: new Date(),
       status: SessionStatus.ACTIVE
     });
@@ -81,7 +82,7 @@ router.post('/create', authenticate, async (req, res): Promise<void> => {
         candidateId,
         candidateName,
         candidateEmail,
-        interviewerUserId,
+        interviewerUserId: req.user?.userId,
         startTime: session.startTime,
         status: session.status
       },
@@ -307,6 +308,16 @@ router.post('/:sessionId/end', authenticate, async (req, res): Promise<void> => 
     session.duration = Math.floor((endTime - startTime) / 1000);
     await session.save();
 
+    // Trigger asynchronous report generation
+    try {
+      const { ReportService } = await import('../services/reportService');
+      ReportService.generateReport(sessionId as string, true).catch((e: any) => {
+        console.error('Failed to trigger report generation:', e);
+      });
+    } catch (e) {
+      console.error('Report service unavailable:', e);
+    }
+
     // Broadcast session end via WebSocket
     if (wsService && sessionId) {
       wsService.broadcastToSession(sessionId, 'session_status_update', {
@@ -358,6 +369,16 @@ router.post('/:sessionId/terminate', authenticate, async (req, res): Promise<voi
     const endTime = session.endTime.getTime();
     session.duration = Math.floor((endTime - startTime) / 1000);
     await session.save();
+
+    // Trigger asynchronous report generation even on termination
+    try {
+      const { ReportService } = await import('../services/reportService');
+      ReportService.generateReport(sessionId as string, true).catch((e: any) => {
+        console.error('Failed to trigger report generation:', e);
+      });
+    } catch (e) {
+      console.error('Report service unavailable:', e);
+    }
 
     // Broadcast session termination via WebSocket
     if (wsService && sessionId) {
@@ -579,6 +600,73 @@ router.get('/stats/websocket', authenticate, async (req, res): Promise<void> => 
       success: false,
       error: 'Internal server error',
       message: 'Failed to fetch WebSocket statistics'
+    };
+    res.status(500).json(response);
+  }
+});
+
+// Get session history for the authenticated interviewer
+router.get('/history/self', authenticate, async (req, res): Promise<void> => {
+  try {
+    if (req.user?.role !== UserRole.INTERVIEWER && req.user?.role !== UserRole.ADMIN) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Unauthorized',
+        message: 'Only interviewers can view session history'
+      };
+      res.status(403).json(response);
+      return;
+    }
+
+    const { limit = 50, offset = 0 } = req.query as any;
+
+    const query: any = {
+      interviewerId: req.user?.userId,
+      status: { $in: [SessionStatus.COMPLETED, SessionStatus.TERMINATED] }
+    };
+
+    const sessions = await InterviewSession.find(query)
+      .sort({ startTime: -1 })
+      .limit(Number(limit))
+      .skip(Number(offset));
+
+    const total = await InterviewSession.countDocuments(query);
+
+    // Attach report info if available
+    const { ProctoringReport } = await import('../models/ProctoringReport');
+    const sessionsWithExtras = await Promise.all(sessions.map(async (s) => {
+      const report = await ProctoringReport.findOne({ sessionId: s.sessionId });
+      const rawUrl = s.videoUrl || null;
+      const absoluteUrl = rawUrl
+        ? (rawUrl.startsWith('http') ? rawUrl : `${req.protocol}://${req.get('host')}${rawUrl}`)
+        : null;
+      return {
+        ...s.toJSON(),
+        reportId: report?.reportId || null,
+        recordingUrl: absoluteUrl
+      };
+    }));
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        sessions: sessionsWithExtras,
+        pagination: {
+          total,
+          limit: Number(limit),
+          offset: Number(offset),
+          hasMore: Number(offset) + sessions.length < total
+        }
+      }
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error fetching session history:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: 'Internal server error',
+      message: 'Failed to fetch session history'
     };
     res.status(500).json(response);
   }

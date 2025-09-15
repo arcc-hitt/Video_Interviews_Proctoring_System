@@ -133,7 +133,7 @@ const ProctoringReportSchema = new Schema<ProctoringReportDocument>({
 
 // Indexes for efficient queries
 ProctoringReportSchema.index({ candidateId: 1, generatedAt: -1 });
-ProctoringReportSchema.index({ sessionId: 1 });
+// Removed duplicate simple index on sessionId since the field already uses index: true
 ProctoringReportSchema.index({ integrityScore: 1 });
 ProctoringReportSchema.index({ generatedAt: -1 });
 

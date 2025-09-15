@@ -4,6 +4,7 @@ import { VideoStreamComponent } from './VideoStreamComponent';
 import { useFaceDetection } from '../hooks/useFaceDetection';
 import { useComputerVision } from '../hooks/useComputerVision';
 import { apiService } from '../services/apiService';
+import { useScreenRecording } from '../hooks/useScreenRecording';
 import { io } from 'socket.io-client';
 import type { InterviewSession, DetectionEvent, FocusStatus, UnauthorizedItem } from '../types';
 
@@ -61,6 +62,12 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const isLeavingRef = useRef<boolean>(false); // Track if we're already in the process of leaving
+
+  // Screen recording hook (uploads chunks to backend)
+  const recording = useScreenRecording({
+    sessionId: (sessionState.session?.sessionId as string) || '',
+    candidateId: (sessionState.session?.candidateId as string) || ''
+  });
 
   // Computer vision hooks
   const { processFrame: processFaceFrame, isInitialized: isFaceDetectionInitialized, cleanup: cleanupFaceDetection } = useFaceDetection({
@@ -413,6 +420,8 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
           'Interview session has been ended by the interviewer. You will be redirected to the dashboard.',
           'info'
         );
+  // Ensure any ongoing recording is stopped and uploaded
+  (async () => { try { await recording.stop(); } catch {} })();
         setTimeout(() => {
           leaveInterview();
         }, 3000);
@@ -423,6 +432,8 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
           'Interview session has been terminated by the interviewer. You will be redirected to the dashboard.',
           'warning'
         );
+  // Ensure any ongoing recording is stopped and uploaded
+  (async () => { try { await recording.stop(); } catch {} })();
         setTimeout(() => {
           leaveInterview();
         }, 3000);
@@ -455,6 +466,16 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
           message: 'Recording has been started by the interviewer.',
           type: 'info'
         });
+        // Start local recording if stream is available
+        if (localStreamRef.current) {
+          recording.start(localStreamRef.current);
+        } else {
+          console.warn('Cannot start recording: no active camera stream');
+          setNotification({
+            message: 'Recording could not start because the camera is not active. Please start camera.',
+            type: 'warning'
+          });
+        }
         break;
       case 'recording_stopped':
         // Interviewer has stopped recording
@@ -462,6 +483,8 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
           message: 'Recording has been stopped by the interviewer.',
           type: 'info'
         });
+        // Stop and upload
+        recording.stop();
         break;
       case 'session_status_update':
         // Handle session status updates from interviewer
@@ -485,6 +508,9 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
             );
           }
           
+          // Attempt to stop and upload any ongoing recording before leaving
+          (async () => { try { await recording.stop(); } catch {} })();
+
           setTimeout(() => {
             leaveInterview();
           }, 3000);

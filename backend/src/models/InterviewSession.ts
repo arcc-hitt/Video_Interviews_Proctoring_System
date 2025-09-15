@@ -5,12 +5,31 @@ import { InterviewSession as IInterviewSession, SessionStatus } from '../types';
 export interface InterviewSessionDocument extends IInterviewSession, Document {
   _id: mongoose.Types.ObjectId;
   candidateEmail?: string; // Add this field to the document interface
+  interviewerId?: string;
+  recordingPublicId?: string;
+  recordingUploadedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  // instance methods
+  calculateDuration: () => number;
+  endSession: () => Promise<InterviewSessionDocument>;
+  terminateSession: () => Promise<InterviewSessionDocument>;
 }
 
 // Interview Session Schema
 const InterviewSessionSchema = new Schema<InterviewSessionDocument>({
+  interviewerId: {
+    type: String,
+    required: false,
+    index: true,
+    validate: {
+      validator: function(v: string) {
+        if (!v) return true;
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+      },
+      message: 'interviewerId must be a valid UUID'
+    }
+  },
   sessionId: { 
     type: String, 
     required: true, 
@@ -83,16 +102,24 @@ const InterviewSessionSchema = new Schema<InterviewSessionDocument>({
     validate: {
       validator: function(v: string) {
         if (!v) return true; // Optional field
-        // Basic URL validation
-        try {
-          new URL(v);
-          return true;
-        } catch {
-          return false;
-        }
+        // Accept absolute URLs and known relative API paths
+        if (v.startsWith('http://') || v.startsWith('https://')) return true;
+        // Allow relative paths for locally stored recordings
+        if (v.startsWith('/')) return true;
+        return false;
       },
       message: 'videoUrl must be a valid URL'
     }
+  },
+  // Cloud storage metadata for recording
+  recordingPublicId: {
+    type: String,
+    required: false,
+    index: true
+  },
+  recordingUploadedAt: {
+    type: Date,
+    required: false
   },
   status: {
     type: String,
@@ -111,7 +138,7 @@ InterviewSessionSchema.index({ status: 1, startTime: -1 });
 InterviewSessionSchema.index({ startTime: -1 });
 
 // Pre-save middleware to calculate duration
-InterviewSessionSchema.pre('save', function(next) {
+InterviewSessionSchema.pre('save', function(this: InterviewSessionDocument, next) {
   if (this.endTime && this.startTime) {
     this.duration = Math.floor((this.endTime.getTime() - this.startTime.getTime()) / 1000);
   }
@@ -125,7 +152,7 @@ InterviewSessionSchema.methods.toJSON = function() {
   return obj;
 };
 
-InterviewSessionSchema.methods.calculateDuration = function(): number {
+InterviewSessionSchema.methods.calculateDuration = function(this: InterviewSessionDocument): number {
   if (this.endTime) {
     return Math.floor((this.endTime.getTime() - this.startTime.getTime()) / 1000);
   }
@@ -133,14 +160,14 @@ InterviewSessionSchema.methods.calculateDuration = function(): number {
   return Math.floor((new Date().getTime() - this.startTime.getTime()) / 1000);
 };
 
-InterviewSessionSchema.methods.endSession = function() {
+InterviewSessionSchema.methods.endSession = function(this: InterviewSessionDocument) {
   this.endTime = new Date();
   this.status = SessionStatus.COMPLETED;
   this.duration = this.calculateDuration();
   return this.save();
 };
 
-InterviewSessionSchema.methods.terminateSession = function() {
+InterviewSessionSchema.methods.terminateSession = function(this: InterviewSessionDocument) {
   this.endTime = new Date();
   this.status = SessionStatus.TERMINATED;
   this.duration = this.calculateDuration();
