@@ -99,28 +99,7 @@ app.use('/api/events', eventRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sessions', sessionRoutes);
 
-// Debug endpoint to help with frontend configuration
-app.get('/api/debug', (req, res) => {
-  const response: ApiResponse = {
-    success: true,
-    data: {
-      timestamp: new Date().toISOString(),
-      headers: req.headers,
-      origin: req.get('origin'),
-      host: req.get('host'),
-      protocol: req.protocol,
-      url: req.url,
-      method: req.method,
-      env: {
-        NODE_ENV: process.env.NODE_ENV,
-        FRONTEND_URL: process.env.FRONTEND_URL,
-        PORT: process.env.PORT
-      }
-    },
-    message: 'Debug endpoint - this helps verify API connectivity'
-  };
-  res.json(response);
-});
+// (Removed /api/debug endpoint for production cleanliness)
 
 // 404 handler - must come before error handling middleware
 app.use((req, res, next) => {
@@ -134,7 +113,9 @@ app.use((req, res, next) => {
 
 // Error handling middleware - must be last
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error(err.stack);
+  if (process.env.NODE_ENV !== 'production') {
+    console.error(err.stack);
+  }
   const response: ApiResponse = {
     success: false,
     error: 'Internal server error',
@@ -158,7 +139,7 @@ async function startServer() {
     
     // Start server
     server.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

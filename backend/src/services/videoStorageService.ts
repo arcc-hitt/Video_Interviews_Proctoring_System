@@ -2,6 +2,20 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { VideoMetadata, VideoUploadInput } from '../types';
+import { cloudStorageService } from './cloudStorageService';
+import { InterviewSession } from '../models/InterviewSession';
+import ffmpeg from 'fluent-ffmpeg';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import ffmpegStatic from 'ffmpeg-static';
+
+try {
+  if (ffmpegStatic) {
+    ffmpeg.setFfmpegPath(ffmpegStatic as string);
+  }
+} catch {
+  // rely on system ffmpeg if available
+}
 
 export interface VideoChunk {
   chunkIndex: number;
@@ -86,6 +100,22 @@ export class VideoStorageService {
     return path.join(this.uploadDir, `${videoId}${ext}`);
   }
 
+  private async convertToMP4(inputPath: string, outputPath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .videoCodec('libx264')
+        .audioCodec('aac')
+        .outputOptions([
+          '-movflags +faststart',
+          '-preset veryfast',
+          '-pix_fmt yuv420p'
+        ])
+        .on('error', (err) => reject(err))
+        .on('end', () => resolve(outputPath))
+        .save(outputPath);
+    });
+  }
+
   /**
    * Initialize or get existing upload session
    */
@@ -164,13 +194,32 @@ export class VideoStorageService {
       const isComplete = session.chunks.size === session.totalChunks;
 
       if (isComplete) {
-        const videoMetadata = await this.assembleVideo(session);
-        this.cleanupSession(sessionKey);
-        return {
-          success: true,
-          isComplete: true,
-          message: `Video uploaded successfully. Video ID: ${videoMetadata.videoId}`
-        };
+        const asyncProcessing = process.env.ASYNC_VIDEO_PROCESSING === 'true' || process.env.NODE_ENV === 'production';
+        if (asyncProcessing) {
+          // Process in background to avoid blocking request in production
+          setImmediate(async () => {
+            try {
+              await this.assembleVideo(session);
+            } catch (e) {
+              console.error('Async video assembly failed:', e);
+            } finally {
+              this.cleanupSession(sessionKey);
+            }
+          });
+          return {
+            success: true,
+            isComplete: true,
+            message: 'Upload complete. Processing recording in background.'
+          };
+        } else {
+          const videoMetadata = await this.assembleVideo(session);
+          this.cleanupSession(sessionKey);
+          return {
+            success: true,
+            isComplete: true,
+            message: `Video uploaded successfully. Video ID: ${videoMetadata.videoId}`
+          };
+        }
       }
 
       return {
@@ -193,8 +242,8 @@ export class VideoStorageService {
    * Assemble video from chunks
    */
   private async assembleVideo(session: VideoUploadSession): Promise<VideoMetadata> {
-    const videoId = randomUUID();
-    const finalPath = this.getFinalVideoPath(videoId, session.filename);
+  const videoId = randomUUID();
+  const finalPath = this.getFinalVideoPath(videoId, session.filename);
     const sessionKey = this.getSessionKey(session.sessionId, session.candidateId);
 
     try {
@@ -220,21 +269,73 @@ export class VideoStorageService {
         writeStream.on('error', reject);
       });
 
-      // Get file stats
-      const stats = await fs.promises.stat(finalPath);
+      let pathForUpload = finalPath;
+      let chosenExt = path.extname(finalPath).toLowerCase();
+      if (chosenExt !== '.mp4') {
+        const mp4Path = path.join(this.uploadDir, `${videoId}.mp4`);
+        try {
+          await this.convertToMP4(finalPath, mp4Path);
+          pathForUpload = mp4Path;
+          chosenExt = '.mp4';
+          try { fs.unlinkSync(finalPath); } catch {/* ignore */}
+        } catch (convErr) {
+          console.error('FFmpeg conversion failed; using original file:', convErr);
+        }
+      }
 
-      // Create metadata
-      const metadata: VideoMetadata = {
+      // Get file stats of the chosen file
+      const stats = await fs.promises.stat(pathForUpload);
+
+      // Default metadata (local storage)
+      let metadata: VideoMetadata = {
         videoId,
         sessionId: session.sessionId,
         candidateId: session.candidateId,
-        filename: `${videoId}${path.extname(session.filename)}`,
+        filename: `${videoId}${chosenExt}`,
         originalName: session.filename,
-        mimeType: session.mimeType,
+        mimeType: chosenExt === '.mp4' ? 'video/mp4' : session.mimeType,
         size: stats.size,
         uploadedAt: new Date(),
         storageUrl: `/api/videos/${videoId}`
       };
+
+      // Try upload to Cloudinary if configured
+      try {
+        if (cloudStorageService.isEnabled()) {
+          const uploadRes = await cloudStorageService.uploadVideo(pathForUpload, {
+            folder: `video-interviews/recordings/${session.sessionId}`
+          });
+          metadata.storageUrl = uploadRes.url;
+          // Persist to session for history/downloads
+          await InterviewSession.findOneAndUpdate(
+            { sessionId: session.sessionId },
+            {
+              videoUrl: uploadRes.url,
+              recordingPublicId: uploadRes.publicId,
+              recordingUploadedAt: new Date()
+            }
+          );
+          // If uploaded to cloud successfully, remove local file to save disk space
+          try { await fs.promises.unlink(pathForUpload); } catch { /* ignore */ }
+        } else {
+          // Fallback: store local file url
+          await InterviewSession.findOneAndUpdate(
+            { sessionId: session.sessionId },
+            {
+              videoUrl: metadata.storageUrl
+            }
+          );
+        }
+      } catch (e) {
+  console.error('Cloud upload failed, keeping local file only:', e);
+        // Keep local storage URL and still save to session
+        await InterviewSession.findOneAndUpdate(
+          { sessionId: session.sessionId },
+          {
+            videoUrl: metadata.storageUrl
+          }
+        );
+      }
 
       return metadata;
 
@@ -254,16 +355,24 @@ export class VideoStorageService {
     stream: fs.ReadStream;
     contentType: string;
     contentLength: number;
+    ext: string;
   } | null> {
     try {
       // Find video file
       const files = await fs.promises.readdir(this.uploadDir);
-      const videoFile = files.find(file => file.startsWith(videoId));
-
-      if (!videoFile) {
+      const candidates = files.filter(file => file.startsWith(videoId));
+      if (candidates.length === 0) {
         return null;
       }
+      // Prefer mp4 if available
+      const priority = ['.mp4', '.webm', '.mov', '.avi'];
+  let selected: string = candidates[0]!;
+      for (const ext of priority) {
+        const found = candidates.find(f => f.toLowerCase().endsWith(ext));
+        if (found) { selected = found; break; }
+      }
 
+      const videoFile: string = selected;
       const filePath = path.join(this.uploadDir, videoFile);
       const stats = await fs.promises.stat(filePath);
       const ext = path.extname(videoFile).toLowerCase();
@@ -287,7 +396,8 @@ export class VideoStorageService {
       return {
         stream,
         contentType,
-        contentLength: stats.size
+        contentLength: stats.size,
+        ext
       };
 
     } catch (error) {
@@ -309,15 +419,23 @@ export class VideoStorageService {
     start: number;
     end: number;
     totalSize: number;
+    ext: string;
   } | null> {
     try {
       // Find video file
       const files = await fs.promises.readdir(this.uploadDir);
-      const videoFile = files.find(file => file.startsWith(videoId));
-
-      if (!videoFile) {
+      const candidates = files.filter(file => file.startsWith(videoId));
+      if (candidates.length === 0) {
         return null;
       }
+      // Prefer mp4 if available
+      const priority = ['.mp4', '.webm', '.mov', '.avi'];
+  let selected: string = candidates[0]!;
+      for (const ext of priority) {
+        const found = candidates.find(f => f.toLowerCase().endsWith(ext));
+        if (found) { selected = found; break; }
+      }
+      const videoFile: string = selected;
 
       const filePath = path.join(this.uploadDir, videoFile);
       const stats = await fs.promises.stat(filePath);
@@ -358,7 +476,8 @@ export class VideoStorageService {
         contentLength,
         start,
         end,
-        totalSize
+        totalSize,
+        ext
       };
 
     } catch (error) {

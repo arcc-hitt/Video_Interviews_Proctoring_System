@@ -4,6 +4,7 @@ import type { InterviewSession } from '../../types';
 import { io, Socket } from 'socket.io-client';
 import { AlertManagementPanel } from '../alerts';
 import { ReportDashboard } from './ReportDashboard';
+import SessionHistory from './SessionHistory';
 import { useAlertStreaming } from '../../hooks/useAlertStreaming';
 import { toast } from 'sonner';
 import apiService from '../../services/apiService';
@@ -810,6 +811,7 @@ export const InterviewerDashboard: React.FC = () => {
         <div className="px-4 py-6 sm:px-0">
           {!selectedSession ? (
             // Session List View
+            <>
             <div className="bg-white shadow rounded-lg p-6">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-lg font-medium text-gray-900">
@@ -874,6 +876,10 @@ export const InterviewerDashboard: React.FC = () => {
                 </div>
               )}
             </div>
+            
+            {/* Session History Section */}
+            <SessionHistory />
+            </>
           ) : (
             // Session Monitoring View
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1086,18 +1092,18 @@ export const InterviewerDashboard: React.FC = () => {
                   {/* Session Info */}
                   <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <span className="font-medium">Candidate:</span> {selectedSession.candidateName}
+                      <span className="font-medium">Candidate:</span> {selectedSession!.candidateName}
                     </div>
                     <div>
-                      <span className="font-medium">Started:</span> {formatTime(new Date(selectedSession.startTime))}
+                      <span className="font-medium">Started:</span> {formatTime(new Date(selectedSession!.startTime))}
                     </div>
                     <div>
                       <span className="font-medium">Status:</span>
-                      <span className={`ml-2 px-2 py-1 text-xs rounded-full ${selectedSession.status === 'active'
+                      <span className={`ml-2 px-2 py-1 text-xs rounded-full ${selectedSession!.status === 'active'
                         ? 'bg-green-100 text-green-800'
                         : 'bg-gray-100 text-gray-800'
                         }`}>
-                        {selectedSession.status}
+                        {selectedSession!.status}
                       </span>
                     </div>
                     <div>
