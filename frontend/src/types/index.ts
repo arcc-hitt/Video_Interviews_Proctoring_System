@@ -62,6 +62,8 @@ export interface VideoStreamProps {
   onRecordingStop?: () => void;
   onError?: (error: VideoStreamError) => void;
   showRecordingControls?: boolean; // Controls whether recording buttons are shown
+  // Optional: receive lightweight results from the CV Web Worker (e.g., face landmarks)
+  onWorkerResult?: (result: CVWorkerLightResult) => void;
 }
 
 export interface VideoStreamState {
@@ -87,6 +89,21 @@ export interface MediaConstraints {
     deviceId?: { exact: string };
   };
   audio: boolean | { deviceId: { exact: string } };
+}
+
+// Lightweight CV worker result types to avoid tight coupling with hook implementation
+export interface CVWorkerLightResult {
+  faceDetection?: WorkerFaceDetection;
+  objectDetection?: {
+    // keep future extensibility minimal; add fields when needed
+  };
+  processingTime: number;
+}
+
+export interface WorkerFaceDetection {
+  landmarks: FaceLandmarks[];
+  confidence: number;
+  timestamp: Date;
 }
 
 // Face detection related types

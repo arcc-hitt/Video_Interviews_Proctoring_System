@@ -1,26 +1,7 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
+import type { CVWorkerLightResult } from '../types';
 
-interface CVWorkerResult {
-  faceDetection?: {
-    faces: Array<{
-      landmarks: Array<{ x: number; y: number; z: number }>;
-      boundingBox: { x: number; y: number; width: number; height: number };
-      confidence: number;
-    }>;
-    landmarks: Array<{ x: number; y: number; z: number }>;
-    confidence: number;
-    timestamp: Date;
-  };
-  objectDetection?: {
-    objects: Array<{
-      class: string;
-      confidence: number;
-      boundingBox: { x: number; y: number; width: number; height: number };
-      timestamp: Date;
-    }>;
-  };
-  processingTime: number;
-}
+interface CVWorkerResult extends CVWorkerLightResult {}
 
 interface UseCVWorkerOptions {
   onResult?: (result: CVWorkerResult) => void;

@@ -69,6 +69,17 @@ export const CV_CONFIG = {
     fallbackProcessing: true // Enable fallback when services fail
   },
 
+  // Drowsiness/Audio Enhanced Monitoring
+  enhancedMonitoring: {
+    // Face mesh sampling interval in ms for EAR computations
+    faceMeshSampleInterval: Number(import.meta.env.VITE_DROWSINESS_SAMPLE_MS ?? 300),
+    // Eye Aspect Ratio thresholds
+    earClosedThreshold: Number(import.meta.env.VITE_EAR_CLOSED_THRESHOLD ?? 0.22),
+    earLongBlinkMs: Number(import.meta.env.VITE_EAR_LONG_BLINK_MS ?? 350),
+    // Audio anomaly smoothing
+    audioEventDebounceMs: Number(import.meta.env.VITE_AUDIO_EVENT_DEBOUNCE_MS ?? 1000)
+  },
+
   // Real-time Communication
   realtime: {
     // WebSocket settings
@@ -130,3 +141,4 @@ export const PROCESSING_CONFIG = CV_CONFIG.processing;
 export const REALTIME_CONFIG = CV_CONFIG.realtime;
 export const PERFORMANCE_CONFIG = CV_CONFIG.performance;
 export const DEBUG_CONFIG = CV_CONFIG.debug;
+export const ENHANCED_MONITORING_CONFIG = CV_CONFIG.enhancedMonitoring;

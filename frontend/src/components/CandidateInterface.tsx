@@ -4,6 +4,11 @@ import { VideoStreamComponent } from './VideoStreamComponent';
 import { useFaceDetection } from '../hooks/useFaceDetection';
 import { useComputerVision } from '../hooks/useComputerVision';
 import { apiService } from '../services/apiService';
+import { useEnhancedMonitoring } from '../hooks/useEnhancedMonitoring';
+import { faceMeshService } from '../services/faceMeshService';
+import type { FaceLandmarks } from '../types';
+import { ENHANCED_MONITORING_CONFIG } from '../config/cvConfig';
+import type { CVWorkerLightResult } from '../types';
 import { useScreenRecording } from '../hooks/useScreenRecording';
 import { io } from 'socket.io-client';
 import type { InterviewSession, DetectionEvent, FocusStatus, UnauthorizedItem } from '../types';
@@ -50,6 +55,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     message: string;
     type: 'info' | 'warning' | 'error' | 'success';
   } | null>(null);
+  const lastCandidateNoticeRef = useRef<Record<string, number>>({});
   const [_currentFocusStatus, _setCurrentFocusStatus] = useState<FocusStatus | null>(null);
   const [_unauthorizedItems, _setUnauthorizedItems] = useState<UnauthorizedItem[]>([]);
   const [_processingMetrics, setProcessingMetrics] = useState({
@@ -62,6 +68,20 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const isLeavingRef = useRef<boolean>(false); // Track if we're already in the process of leaving
+  const lastDrowsinessAtRef = useRef<number>(0);
+  const lastWorkerLandmarksAtRef = useRef<number>(0);
+
+  // Enhanced monitoring (drowsiness + audio)
+  const {
+    startMonitoring: startEnhancedMonitoring,
+    stopMonitoring: stopEnhancedMonitoring,
+    processFaceLandmarks: processDrowsinessLandmarks,
+    isMonitoring: isEnhancedMonitoring
+  } = useEnhancedMonitoring({
+    sessionId: sessionState.session?.sessionId || '',
+    candidateId: sessionState.session?.candidateId || '',
+    onDetectionEvent: handleDetectionEvent
+  });
 
   // Screen recording hook (uploads chunks to backend)
   const recording = useScreenRecording({
@@ -97,7 +117,12 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
   const isDetecting = isFaceDetectionInitialized && isComputerVisionInitialized;
 
   // Show notification with optional auto-dismiss timing
-  const showNotification = (message: string, type: 'info' | 'warning' | 'error' | 'success', autoDismissMs?: number) => {
+  const showNotification = (message: string, type: 'info' | 'warning' | 'error' | 'success', autoDismissMs?: number, key?: string, minIntervalMs: number = 2000) => {
+    const k = key || `${type}:${message}`;
+    const now = Date.now();
+    const last = lastCandidateNoticeRef.current[k] || 0;
+    if (now - last < minIntervalMs) return;
+    lastCandidateNoticeRef.current[k] = now;
     setNotification({ message, type });
     if (autoDismissMs) {
       setTimeout(() => setNotification(null), autoDismissMs);
@@ -132,15 +157,27 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
 
     // Provide real-time feedback to candidate
     if (event.eventType === 'absence') {
-      showNotification('Please ensure your face is visible to the camera', 'warning', 5000);
+      showNotification('Please ensure your face is visible to the camera', 'warning', 5000, 'absence', 6000);
     } else if (event.eventType === 'multiple-faces') {
-      showNotification('Multiple faces detected. Please ensure only you are visible', 'warning', 5000);
+      showNotification('Multiple faces detected. Please ensure only you are visible', 'warning', 5000, 'multiple-faces', 8000);
     } else if (event.eventType === 'focus-loss') {
-      showNotification('Please look at the screen during the interview', 'info', 3000);
+      showNotification('Please look at the screen during the interview', 'info', 3000, 'focus-loss', 5000);
     } else if (event.eventType === 'face-visible') {
       showNotification('Great! Your face is now visible to the interviewer', 'success', 2000);
     } else if (event.eventType === 'unauthorized-item') {
-      showNotification('Unauthorized item detected. Please remove any prohibited items', 'error', 7000);
+      showNotification('Unauthorized item detected. Please remove any prohibited items', 'error', 7000, 'unauthorized-item', 7000);
+    } else if (event.eventType === 'drowsiness') {
+      showNotification('Signs of drowsiness detected. Please stay attentive.', 'warning', 5000, 'drowsiness', 8000);
+    } else if (event.eventType === 'eye-closure') {
+      showNotification('Prolonged eye closure detected. Please keep your eyes open.', 'warning', 5000, 'eye-closure', 6000);
+    } else if (event.eventType === 'excessive-blinking') {
+      showNotification('Excessive blinking detected. Please focus on the screen.', 'info', 4000, 'excessive-blinking', 6000);
+    } else if (event.eventType === 'background-voice') {
+      showNotification('Background voice detected. Ensure you are alone in a quiet room.', 'warning', 6000, 'background-voice', 10000);
+    } else if (event.eventType === 'multiple-voices') {
+      showNotification('Multiple voices detected simultaneously. This is not allowed.', 'error', 7000, 'multiple-voices', 10000);
+    } else if (event.eventType === 'excessive-noise') {
+      showNotification('High background noise detected. Please move to a quieter place.', 'info', 5000, 'excessive-noise', 8000);
     }
   }
 
@@ -222,6 +259,8 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
 
       // Initialize WebSocket connection for real-time communication
       initializeWebSocket(sessionId);
+
+      // Defer enhanced monitoring startup to an effect when session is ready
 
     } catch (error) {
       console.error('Error initializing session:', error);
@@ -413,6 +452,12 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
           canLeaveInterview: true
         }));
         // Start detection automatically when session starts
+        // Ensure enhanced monitoring is running when session starts
+        (async () => {
+          try {
+            await startEnhancedMonitoring();
+          } catch {}
+        })();
         break;
       case 'session_ended':
         // Interviewer has ended the session
@@ -533,6 +578,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
       // Cleanup resources
       cleanupFaceDetection();
       cleanupComputerVision();
+      stopEnhancedMonitoring();
       
       if (sessionTimerRef.current) {
         clearInterval(sessionTimerRef.current);
@@ -605,6 +651,25 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
             // Continue with other processing even if object detection fails
           })
         ]);
+
+        // Drowsiness detection via Face Mesh landmarks (if enhanced monitoring active)
+        try {
+          const nowTs = performance.now();
+          const interval = ENHANCED_MONITORING_CONFIG.faceMeshSampleInterval || 300;
+          const workerFreshnessMs = 2 * interval; // if we received worker landmarks recently, skip main-thread path
+          const hasRecentWorkerLandmarks = (nowTs - lastWorkerLandmarksAtRef.current) < workerFreshnessMs;
+          if (isEnhancedMonitoring && sessionState.session && (nowTs - lastDrowsinessAtRef.current) >= interval && !hasRecentWorkerLandmarks) {
+            lastDrowsinessAtRef.current = nowTs;
+            // Lazily initialize face mesh and estimate landmarks
+            const landmarks: FaceLandmarks[] = await faceMeshService.estimateLandmarks(imageData);
+            if (landmarks && landmarks.length > 0) {
+              await processDrowsinessLandmarks(landmarks);
+            }
+          }
+        } catch (e) {
+          // Fail-soft; continue other processing
+          if (import.meta.env.DEV) console.debug('Enhanced monitoring frame process error:', e);
+        }
         
         // Log processing performance for monitoring
         const processingTime = performance.now() - startTime;
@@ -621,7 +686,20 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
         // Don't stop the entire system for processing errors
       }
     }
-  }, [isDetecting, sessionControls.isSessionActive, processFaceFrame, processComputerVisionFrame]);
+  }, [isDetecting, sessionControls.isSessionActive, processFaceFrame, processComputerVisionFrame, isEnhancedMonitoring, processDrowsinessLandmarks, sessionState.session]);
+
+  // Start enhanced monitoring when session is available and active
+  useEffect(() => {
+    if (!isEnhancedMonitoring && sessionState.session && sessionControls.isSessionActive) {
+      (async () => {
+        try {
+          await startEnhancedMonitoring();
+        } catch (e) {
+          // Non-fatal; UI continues without enhanced monitoring
+        }
+      })();
+    }
+  }, [isEnhancedMonitoring, sessionState.session, sessionControls.isSessionActive, startEnhancedMonitoring]);
 
   // Memoized callbacks for VideoStreamComponent
   const handleStreamStart = useCallback((stream: MediaStream) => {
@@ -648,6 +726,23 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     console.error('Video error:', error);
   }, []);
 
+  // Handle CV worker lightweight results (e.g., face landmarks for drowsiness)
+  const handleWorkerResult = useCallback(async (result: CVWorkerLightResult) => {
+    try {
+      if (!isEnhancedMonitoring || !sessionState.session) return;
+      const nowTs = performance.now();
+      const interval = ENHANCED_MONITORING_CONFIG.faceMeshSampleInterval || 300;
+      if ((nowTs - lastDrowsinessAtRef.current) < interval) return;
+      if (result.faceDetection && result.faceDetection.landmarks?.length) {
+        lastDrowsinessAtRef.current = nowTs;
+        lastWorkerLandmarksAtRef.current = nowTs;
+        await processDrowsinessLandmarks(result.faceDetection.landmarks);
+      }
+    } catch (e) {
+      if (import.meta.env.DEV) console.debug('Worker result handling failed:', e);
+    }
+  }, [isEnhancedMonitoring, sessionState.session, processDrowsinessLandmarks]);
+
   // Initialize session on mount
   useEffect(() => {
     initializeSession();
@@ -656,6 +751,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
     return () => {
       cleanupFaceDetection();
       cleanupComputerVision();
+      stopEnhancedMonitoring();
       
       if (sessionTimerRef.current) {
         clearInterval(sessionTimerRef.current);
@@ -796,6 +892,7 @@ export const CandidateInterface: React.FC<CandidateInterfaceProps> = ({
                 
                 <VideoStreamComponent
                   onFrameCapture={handleFrameCapture}
+                  onWorkerResult={handleWorkerResult}
                   onStreamStart={handleStreamStart}
                   onStreamStop={handleStreamStop}
                   onRecordingStart={handleRecordingStart}
