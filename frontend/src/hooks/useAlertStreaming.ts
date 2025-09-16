@@ -28,19 +28,33 @@ interface UseAlertStreamingReturn {
 }
 
 const getEventMessage = (event: DetectionEvent): string => {
+  // Prefer specific description from metadata when provided
+  const metaMsg = event.metadata && (event.metadata as any).description;
+  if (typeof metaMsg === 'string' && metaMsg.trim().length > 0) return metaMsg;
   switch (event.eventType) {
     case 'focus-loss':
-      return 'Candidate looked away from screen';
+      // Try to tailor by direction if available
+      if (event.metadata?.gazeDirection) {
+        const { x, y } = event.metadata.gazeDirection as any;
+        const horiz = x > 0.2 ? 'right' : x < -0.2 ? 'left' : null;
+        const vert = y > 0.15 ? 'down' : y < -0.2 ? 'up' : null;
+        if (horiz || vert) {
+          return `Candidate looked ${horiz ?? vert}`;
+        }
+      }
+      return 'Candidate looked away from the screen';
     case 'absence':
-      return 'No face detected';
+      return 'Face not visible';
+    case 'face-visible':
+      return 'Face visible again';
     case 'multiple-faces':
-      return 'Multiple faces detected';
+      return 'More than one face in view';
     case 'unauthorized-item':
-      return 'Unauthorized item detected';
+      return 'Potentially unauthorized item detected';
     case 'drowsiness':
-      return 'Drowsiness detected';
+      return 'Signs of drowsiness detected';
     case 'eye-closure':
-      return 'Prolonged eye closure detected';
+      return 'Eyes closed for too long';
     case 'excessive-blinking':
       return 'Excessive blinking detected';
     case 'background-voice':
@@ -48,7 +62,7 @@ const getEventMessage = (event: DetectionEvent): string => {
     case 'multiple-voices':
       return 'Multiple voices detected';
     case 'excessive-noise':
-      return 'Excessive background noise detected';
+      return 'High background noise detected';
     default:
       return `Event: ${event.eventType}`;
   }

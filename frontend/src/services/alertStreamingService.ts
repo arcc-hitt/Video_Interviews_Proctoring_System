@@ -197,12 +197,7 @@ export class AlertStreamingService {
 
     // Detection event from candidate
     this.socket.on('detection_event_broadcast', (event: DetectionEvent) => {
-      const alert = this.convertDetectionEventToAlert(event);
-      
-      if (this.callbacks.onAlert) {
-        this.callbacks.onAlert(alert);
-      }
-      
+      // Only forward as detection event; let consumers decide whether/how to surface as alerts
       if (this.callbacks.onDetectionEvent) {
         this.callbacks.onDetectionEvent(event);
       }
@@ -254,53 +249,6 @@ export class AlertStreamingService {
     });
   }
 
-  /**
-   * Convert detection event to alert format
-   */
-  private convertDetectionEventToAlert(event: DetectionEvent): Alert {
-    const alertMessages: Record<DetectionEvent['eventType'], string> = {
-      'focus-loss': 'Candidate looking away from screen',
-      'absence': 'Candidate not present in frame',
-      'face-visible': 'Candidate face is now visible',
-      'multiple-faces': 'Multiple faces detected',
-      'unauthorized-item': `Unauthorized item detected: ${event.metadata?.objectType || 'unknown item'}`,
-      'manual_flag': 'Manual observation flagged',
-      'inactivity': 'Candidate inactive',
-      'long_session': 'Long session detected',
-      'heartbeat': 'System heartbeat',
-      'drowsiness': 'Drowsiness detected',
-      'eye-closure': 'Eye closure detected',
-      'excessive-blinking': 'Excessive blinking detected',
-      'background-voice': 'Background voice detected',
-      'multiple-voices': 'Multiple voices detected',
-      'excessive-noise': 'Excessive noise detected'
-    };
-
-    const alertSeverities: Record<DetectionEvent['eventType'], Alert['severity']> = {
-      'focus-loss': 'low',
-      'absence': 'medium',
-      'face-visible': 'low',
-      'multiple-faces': 'high',
-      'unauthorized-item': 'high',
-      'manual_flag': 'medium',
-      'inactivity': 'low',
-      'long_session': 'low',
-      'heartbeat': 'low',
-      'drowsiness': 'medium',
-      'eye-closure': 'medium',
-      'excessive-blinking': 'low',
-      'background-voice': 'medium',
-      'multiple-voices': 'high',
-      'excessive-noise': 'medium'
-    };
-
-    return {
-      type: event.eventType,
-      message: alertMessages[event.eventType],
-      timestamp: new Date(event.timestamp),
-      severity: alertSeverities[event.eventType]
-    };
-  }
 
   /**
    * Join a specific session for monitoring

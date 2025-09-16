@@ -28,7 +28,6 @@ interface DetectionState {
 interface FaceDetectionHistory {
   recentFaceCounts: number[]; // Last few face counts
   stableFaceCount: number;    // Most consistent face count
-  confidenceSum: number;      // Sum of recent confidences
   frameBuffer: number;        // Number of frames to buffer
 }
 
@@ -51,7 +50,6 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
   private detectionHistory: FaceDetectionHistory = {
     recentFaceCounts: [],
     stableFaceCount: 0,
-    confidenceSum: 0,
     frameBuffer: 10 // Consider last 10 frames for more stability
   };
 
@@ -60,15 +58,27 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
   private warmupFrameCount = 0;
   private readonly WARMUP_FRAMES = 30; // Wait 30 frames before triggering alerts (~1 second at 30fps)
 
+  // Track last focused gaze and off-direction dwell for robust focus-loss
+  private lastFocusedGaze: GazeDirection | null = null;
+  private offDirectionStartMs: number | null = null;
+  private offFocusFrameCount: number = 0;
+
   // Configuration constants
-  private readonly FOCUS_LOSS_THRESHOLD = 5000; // 5 seconds
-  private readonly ABSENCE_THRESHOLD = 15; // require ~0.8s at 30fps to mark absence
-  private readonly MULTIPLE_FACES_THRESHOLD = 12; // slightly more stable for multiple faces
-  private readonly PRESENCE_THRESHOLD = 18; // require ~0.6s of continuous presence before face-visible
-  private readonly GAZE_THRESHOLD = 0.4; // Threshold for determining if looking at screen (more lenient)
+  private readonly FOCUS_LOSS_THRESHOLD = 900; // ~0.9 seconds to confirm looking away
+  private readonly ABSENCE_THRESHOLD = 8; // ~0.25s at 30fps to mark absence faster
+  private readonly MULTIPLE_FACES_THRESHOLD = 10; // slightly quicker multiple faces
+  private readonly PRESENCE_THRESHOLD = 12; // ~0.4s continuous presence before face-visible
+  private readonly GAZE_THRESHOLD = 0.35; // Slightly more lenient to reduce false focus loss
   private readonly MIN_FACE_CONFIDENCE = 0.6; // Relaxed to reduce intermittent dropouts
   private readonly MIN_FACE_SIZE = 0.03; // Allow slightly smaller faces (~3% of frame)
-  private readonly CROSS_EVENT_COOLDOWN_MS = 4000; // Cooldown between absence <-> face-visible
+  private readonly CROSS_EVENT_COOLDOWN_MS = 2500; // Faster recovery between absence <-> face-visible
+  private readonly POST_FACE_VISIBLE_GRACE_MS = 1800; // Suppress focus-loss shortly after face becomes visible
+
+  // Directional movement detection for focus-loss
+  private readonly DIRECTION_DELTA_THRESHOLD = 0.2; // Easier to qualify direction change
+  private readonly OFF_DIRECTION_DWELL_MS = 500; // Shorter dwell before starting timer
+  private readonly OFF_FOCUS_FRAMES_THRESHOLD = 10; // ~0.33s at 30fps as fallback
+  private readonly ABS_AWAY_GAZE_THRESHOLD = 0.25; // Absolute away threshold if no baseline
 
   public onFocusEvent?: (event: FocusEvent) => void;
 
@@ -312,10 +322,9 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     this.clearTimer(timer);
   }
 
-  private updateDetectionHistory(faceCount: number, confidence: number): number {
+  private updateDetectionHistory(faceCount: number): number {
     // Add current detection to history
     this.detectionHistory.recentFaceCounts.push(faceCount);
-    this.detectionHistory.confidenceSum += confidence;
     
     // Keep only the last N frames
     if (this.detectionHistory.recentFaceCounts.length > this.detectionHistory.frameBuffer) {
@@ -356,7 +365,7 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     if (this.warmupFrameCount <= this.WARMUP_FRAMES) {
       this.isWarmingUp = true;
       // Still update detection history during warmup for smoother transition
-      this.updateDetectionHistory(rawFaceCount, result.confidence);
+      this.updateDetectionHistory(rawFaceCount);
       
       return; // Skip alert triggering during warmup
     } else if (this.isWarmingUp) {
@@ -365,17 +374,19 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     }
     
     // Use detection history for more stable face counting
-    const stableFaceCount = this.updateDetectionHistory(rawFaceCount, result.confidence);
+  const stableFaceCount = this.updateDetectionHistory(rawFaceCount);
     
     if (stableFaceCount === 0) {
-      // No face detected (stable)
+  // No face detected (stable)
       this.multipleFacesState = { frameCount: 0, triggered: false }; // Reset multiple faces
       this.presenceState = { frameCount: 0, triggered: false }; // Reset presence
       this.absenceState.frameCount++;
+  // Reset off-focus accumulation when face is absent
+  this.offFocusFrameCount = 0;
 
       // Use more lenient thresholds shortly after warmup
-      const isRecentlyWarmedUp = this.warmupFrameCount <= (this.WARMUP_FRAMES + 60); // First 3 seconds after warmup
-      const effectiveAbsenceThreshold = isRecentlyWarmedUp ? this.ABSENCE_THRESHOLD * 2 : this.ABSENCE_THRESHOLD;
+  const isRecentlyWarmedUp = this.warmupFrameCount <= (this.WARMUP_FRAMES + 60); // First 3 seconds after warmup
+  const effectiveAbsenceThreshold = isRecentlyWarmedUp ? Math.ceil(this.ABSENCE_THRESHOLD * 1.5) : this.ABSENCE_THRESHOLD;
 
       if (this.absenceState.frameCount >= effectiveAbsenceThreshold && !this.absenceState.triggered) {
         // Enforce cooldown if we just emitted face-visible recently
@@ -398,11 +409,13 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       
       this.stopFocusTimer('looking-away');
       
-    } else if (stableFaceCount > 1) {
-      // Multiple faces detected (stable)
+  } else if (stableFaceCount > 1) {
+  // Multiple faces detected (stable)
       this.absenceState = { frameCount: 0, triggered: false }; // Reset absence
       this.presenceState = { frameCount: 0, triggered: false }; // Reset presence
       this.multipleFacesState.frameCount++;
+  // Reset off-focus accumulation when multiple faces
+  this.offFocusFrameCount = 0;
 
       if (this.multipleFacesState.frameCount >= this.MULTIPLE_FACES_THRESHOLD && !this.multipleFacesState.triggered) {
         this.multipleFacesState.triggered = true;
@@ -421,7 +434,7 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       this.stopFocusTimer('absent');
       
     } else {
-      // Single face detected (stable)
+  // Single face detected (stable)
       // Build up presence frames and only emit after hysteresis
       this.absenceState.frameCount = 0; // reset count but keep 'triggered' until resolved
       this.multipleFacesState.frameCount = 0;
@@ -446,6 +459,9 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
         // Clear previous triggers after successful recovery
         this.absenceState.triggered = false;
         this.multipleFacesState.triggered = false;
+        // Reset directional state on recovery
+        this.lastFocusedGaze = null;
+        this.offDirectionStartMs = null;
       }
 
       // Only process gaze tracking if we have actual face data
@@ -455,7 +471,7 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
         const focusStatus = this.checkFocusStatus(gazeDirection, 1); // Use actual count of 1
         
         // Check if focus state changed
-        const wasFocused = this.currentFocusStatus?.isFocused || false;
+  // We no longer emit immediate focus-loss; rely on directional dwell + timer
         const isNowFocused = focusStatus.isFocused;
         
         this.currentFocusStatus = focusStatus;
@@ -464,24 +480,49 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
           // Currently focused - stop all timers
           this.stopFocusTimer('looking-away');
           this.stopFocusTimer('absent');
+          // Track last known focused gaze to compare future movement
+          this.lastFocusedGaze = { ...focusStatus.gazeDirection };
+          this.offDirectionStartMs = null;
+          this.offFocusFrameCount = 0;
         } else {
           // Not focused - start looking-away timer
           this.stopFocusTimer('absent');
-          this.startFocusTimer('looking-away');
-          
-          // If focus was just lost, emit immediate event
-          if (wasFocused) {
-            this.emitFocusEvent({
-              type: 'focus-loss',
-              timestamp: currentTime,
-              duration: 0, // Immediate detection
-              confidence: focusStatus.confidence,
-              metadata: {
-                faceCount: 1,
-                gazeDirection: focusStatus.gazeDirection,
-                previousState: 'focused'
+          // If we very recently emitted face-visible, allow a short stabilization window
+          const justFaceVisible = this.lastEvent.type === 'face-visible' && (nowMs - this.lastEvent.time) < this.POST_FACE_VISIBLE_GRACE_MS;
+          if (justFaceVisible) {
+            this.offFocusFrameCount = 0;
+            this.offDirectionStartMs = null;
+            this.stopFocusTimer('looking-away');
+            return; // skip focus-loss evaluation during grace period
+          }
+          // Only consider focus loss when there's a meaningful direction change from last focused gaze
+          const last = this.lastFocusedGaze;
+          const dx = last ? Math.abs(focusStatus.gazeDirection.x - last.x) : 0;
+          const dy = last ? Math.abs(focusStatus.gazeDirection.y - last.y) : 0;
+          const movedDirectionally = (dx + dy) / 2 >= this.DIRECTION_DELTA_THRESHOLD;
+
+          if (movedDirectionally) {
+            // Require dwell in off-direction before starting the main timer
+            if (!this.offDirectionStartMs) {
+              this.offDirectionStartMs = nowMs;
+            }
+            const dwell = nowMs - (this.offDirectionStartMs || nowMs);
+            if (dwell >= this.OFF_DIRECTION_DWELL_MS) {
+              this.startFocusTimer('looking-away');
+            }
+          } else {
+            // Fallback: accumulate off-focus frames using an absolute away threshold
+            const absAway = Math.abs(focusStatus.gazeDirection.x) > this.ABS_AWAY_GAZE_THRESHOLD || Math.abs(focusStatus.gazeDirection.y) > this.ABS_AWAY_GAZE_THRESHOLD || !focusStatus.gazeDirection.isLookingAtScreen;
+            if (absAway) {
+              this.offFocusFrameCount++;
+              if (this.offFocusFrameCount >= this.OFF_FOCUS_FRAMES_THRESHOLD) {
+                this.startFocusTimer('looking-away');
               }
-            });
+            } else {
+              this.offFocusFrameCount = 0;
+              this.offDirectionStartMs = null;
+              this.stopFocusTimer('looking-away');
+            }
           }
         }
       }
@@ -526,7 +567,6 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     this.detectionHistory = {
       recentFaceCounts: [],
       stableFaceCount: 0,
-      confidenceSum: 0,
       frameBuffer: 5
     };
     
@@ -539,6 +579,9 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     this.multipleFacesState = { frameCount: 0, triggered: false };
     this.presenceState = { frameCount: 0, triggered: false };
     this.lastEvent = { type: null, time: 0 };
+  this.lastFocusedGaze = null;
+  this.offDirectionStartMs = null;
+    this.offFocusFrameCount = 0;
     
     if (this.model) {
       // BlazeFace models don't need explicit disposal
