@@ -125,6 +125,35 @@ const ProctoringReportSchema = new Schema<ProctoringReportDocument>({
   metadata: {
     type: Schema.Types.Mixed,
     default: {}
+  },
+  // Cloudinary storage URLs for generated reports
+  cloudinaryPdfUrl: {
+    type: String,
+    required: false,
+    validate: {
+      validator: function(v: string) {
+        return !v || /^https?:\/\/.*/.test(v);
+      },
+      message: 'cloudinaryPdfUrl must be a valid URL'
+    }
+  },
+  cloudinaryPdfPublicId: {
+    type: String,
+    required: false
+  },
+  cloudinaryCsvUrl: {
+    type: String,
+    required: false,
+    validate: {
+      validator: function(v: string) {
+        return !v || /^https?:\/\/.*/.test(v);
+      },
+      message: 'cloudinaryCsvUrl must be a valid URL'
+    }
+  },
+  cloudinaryCsvPublicId: {
+    type: String,
+    required: false
   }
 }, {
   timestamps: true,

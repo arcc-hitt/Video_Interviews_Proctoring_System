@@ -14,7 +14,7 @@ A comprehensive real-time video interview monitoring platform that leverages adv
 - **Comprehensive Reports** - Detailed proctoring reports with integrity scores and timeline
 - **Role-Based Interface** - Separate dashboards for candidates and interviewers
 - **Export Capabilities** - PDF and CSV report generation for record keeping
-- **Cloud Storage** - Cloudinary integration for scalable video storage and delivery
+- **Cloud Storage** - Cloudinary integration for scalable video recordings/ reports storage and delivery
 
 ## Technology Stack
 

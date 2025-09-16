@@ -6,6 +6,7 @@ import { InterviewSession } from '../models/InterviewSession';
 import { ProctoringReport } from '../models/ProctoringReport';
 import { ManualObservation } from '../models/ManualObservation';
 import { EventType, SuspiciousEvent, ManualObservation as IManualObservation } from '../types';
+import { cloudStorageService } from './cloudStorageService';
 import { Readable } from 'stream';
 import path from 'path';
 import fs from 'fs/promises';
@@ -135,6 +136,64 @@ export class ReportService {
             });
 
             await report.save();
+
+            // Generate and upload reports to Cloudinary if configured
+            if (cloudStorageService.isEnabled()) {
+                reportStatusMap.set(reportId, {
+                    reportId,
+                    status: 'processing',
+                    progress: 70,
+                    message: 'Generating PDF report'
+                });
+
+                try {
+                    // Generate PDF
+                    const pdfBuffer = await this.exportReportAsPDF(reportId, includeManualObservations);
+                    const pdfResult = await cloudStorageService.uploadDocument(
+                        pdfBuffer,
+                        `proctoring-report-${reportId}.pdf`,
+                        {
+                            public_id: `proctoring-report-${reportId}-pdf`,
+                            folder: 'video-interviews/reports'
+                        }
+                    );
+
+                    reportStatusMap.set(reportId, {
+                        reportId,
+                        status: 'processing',
+                        progress: 85,
+                        message: 'Generating CSV report'
+                    });
+
+                    // Generate CSV
+                    const csvBuffer = await this.exportReportAsCSV(reportId, includeManualObservations);
+                    const csvResult = await cloudStorageService.uploadDocument(
+                        csvBuffer,
+                        `proctoring-report-${reportId}.csv`,
+                        {
+                            public_id: `proctoring-report-${reportId}-csv`,
+                            folder: 'video-interviews/reports'
+                        }
+                    );
+
+                    // Update report with Cloudinary URLs
+                    report.cloudinaryPdfUrl = pdfResult.url;
+                    report.cloudinaryPdfPublicId = pdfResult.publicId;
+                    report.cloudinaryCsvUrl = csvResult.url;
+                    report.cloudinaryCsvPublicId = csvResult.publicId;
+                    await report.save();
+
+                    reportStatusMap.set(reportId, {
+                        reportId,
+                        status: 'processing',
+                        progress: 95,
+                        message: 'Finalizing report storage'
+                    });
+                } catch (cloudError) {
+                    console.warn('Failed to upload reports to Cloudinary:', cloudError);
+                    // Continue without failing the entire report generation
+                }
+            }
 
             // Update status to completed
             reportStatusMap.set(reportId, {

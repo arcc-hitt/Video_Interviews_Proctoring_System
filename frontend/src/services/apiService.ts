@@ -152,6 +152,41 @@ class ApiService {
   public delete<T = any>(endpoint: string, config?: RequestConfig): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, { ...config, method: 'DELETE' });
   }
+
+  // Report-specific methods
+  public async generateReport(sessionId: string, includeManualObservations: boolean = true) {
+    return this.post('/api/reports/generate', { sessionId, includeManualObservations });
+  }
+
+  public async getReportStatus(reportId: string) {
+    return this.get(`/api/reports/${reportId}/status`);
+  }
+
+  public async getReport(reportId: string) {
+    return this.get(`/api/reports/${reportId}`);
+  }
+
+  public async getReportCloudLinks(reportId: string) {
+    return this.get(`/api/reports/${reportId}/cloud-links`);
+  }
+
+  public getReportExportUrl(reportId: string, format: 'pdf' | 'csv', includeManualObservations: boolean = true): string {
+    const params = new URLSearchParams({
+      format,
+      includeManualObservations: includeManualObservations.toString()
+    });
+    return `${this.baseURL}/api/reports/${reportId}/export?${params.toString()}`;
+  }
+
+  public async addManualObservation(observation: {
+    sessionId: string;
+    observationType: 'suspicious_behavior' | 'technical_issue' | 'general_note' | 'violation';
+    description: string;
+    severity: 'low' | 'medium' | 'high';
+    flagged?: boolean;
+  }) {
+    return this.post('/api/reports/observations', observation);
+  }
 }
 
 // Create singleton instance
