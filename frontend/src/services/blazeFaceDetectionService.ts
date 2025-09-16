@@ -45,13 +45,14 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
   // State for smoothing detection
   private absenceState: DetectionState = { frameCount: 0, triggered: false };
   private multipleFacesState: DetectionState = { frameCount: 0, triggered: false };
+  private presenceState: DetectionState = { frameCount: 0, triggered: false }; // for face-visible hysteresis
   
   // Enhanced detection history for stability
   private detectionHistory: FaceDetectionHistory = {
     recentFaceCounts: [],
     stableFaceCount: 0,
     confidenceSum: 0,
-    frameBuffer: 5 // Consider last 5 frames
+    frameBuffer: 10 // Consider last 10 frames for more stability
   };
 
   // Warmup and stability tracking
@@ -61,13 +62,18 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
 
   // Configuration constants
   private readonly FOCUS_LOSS_THRESHOLD = 5000; // 5 seconds
-  private readonly ABSENCE_THRESHOLD = 8; // 8 consecutive frames (more lenient)
-  private readonly MULTIPLE_FACES_THRESHOLD = 10; // 10 consecutive frames (more stable)
+  private readonly ABSENCE_THRESHOLD = 15; // require ~0.8s at 30fps to mark absence
+  private readonly MULTIPLE_FACES_THRESHOLD = 12; // slightly more stable for multiple faces
+  private readonly PRESENCE_THRESHOLD = 18; // require ~0.6s of continuous presence before face-visible
   private readonly GAZE_THRESHOLD = 0.4; // Threshold for determining if looking at screen (more lenient)
-  private readonly MIN_FACE_CONFIDENCE = 0.75; // Increased confidence for better detection
-  private readonly MIN_FACE_SIZE = 0.04; // Minimum face size as percentage of image (5%)
+  private readonly MIN_FACE_CONFIDENCE = 0.6; // Relaxed to reduce intermittent dropouts
+  private readonly MIN_FACE_SIZE = 0.03; // Allow slightly smaller faces (~3% of frame)
+  private readonly CROSS_EVENT_COOLDOWN_MS = 4000; // Cooldown between absence <-> face-visible
 
   public onFocusEvent?: (event: FocusEvent) => void;
+
+  // Track last emitted event to enforce cooldowns
+  private lastEvent: { type: FocusEvent['type'] | null; time: number } = { type: null, time: 0 };
 
   constructor() {
     // Prevent multiple instances
@@ -343,6 +349,7 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
   private processFocusTracking(result: FaceDetectionResult): void {
     const rawFaceCount = result.faces.length;
     const currentTime = new Date();
+    const nowMs = currentTime.getTime();
     
     // Handle warmup period - don't trigger alerts during initial frames
     this.warmupFrameCount++;
@@ -363,6 +370,7 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     if (stableFaceCount === 0) {
       // No face detected (stable)
       this.multipleFacesState = { frameCount: 0, triggered: false }; // Reset multiple faces
+      this.presenceState = { frameCount: 0, triggered: false }; // Reset presence
       this.absenceState.frameCount++;
 
       // Use more lenient thresholds shortly after warmup
@@ -370,6 +378,11 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       const effectiveAbsenceThreshold = isRecentlyWarmedUp ? this.ABSENCE_THRESHOLD * 2 : this.ABSENCE_THRESHOLD;
 
       if (this.absenceState.frameCount >= effectiveAbsenceThreshold && !this.absenceState.triggered) {
+        // Enforce cooldown if we just emitted face-visible recently
+        const canEmit = this.canEmitEvent('absence', nowMs);
+        if (!canEmit) {
+          return;
+        }
         this.absenceState.triggered = true;
         this.emitFocusEvent({
           type: 'absence',
@@ -380,6 +393,7 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
             previousState: this.currentFocusStatus ? (this.currentFocusStatus.isFocused ? 'focused' : 'unfocused') : 'unknown'
           }
         });
+        this.setLastEvent('absence', nowMs);
       }
       
       this.stopFocusTimer('looking-away');
@@ -387,6 +401,7 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     } else if (stableFaceCount > 1) {
       // Multiple faces detected (stable)
       this.absenceState = { frameCount: 0, triggered: false }; // Reset absence
+      this.presenceState = { frameCount: 0, triggered: false }; // Reset presence
       this.multipleFacesState.frameCount++;
 
       if (this.multipleFacesState.frameCount >= this.MULTIPLE_FACES_THRESHOLD && !this.multipleFacesState.triggered) {
@@ -407,35 +422,31 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
       
     } else {
       // Single face detected (stable)
-      // Reset both absence and multiple faces state
-      if (this.absenceState.triggered) {
-        // If absence was triggered, emit face-visible event to notify interviewer
+      // Build up presence frames and only emit after hysteresis
+      this.absenceState.frameCount = 0; // reset count but keep 'triggered' until resolved
+      this.multipleFacesState.frameCount = 0;
+      this.presenceState.frameCount++;
+
+      const canEmitFaceVisible = this.presenceState.frameCount >= this.PRESENCE_THRESHOLD && !this.presenceState.triggered && this.canEmitEvent('face-visible', nowMs);
+
+      if (canEmitFaceVisible && (this.absenceState.triggered || this.multipleFacesState.triggered)) {
+        // If prior state was absence or multiple-faces and we've had stable presence, emit face-visible once
+        const previousState = this.absenceState.triggered ? 'absent' : 'multiple-faces';
         this.emitFocusEvent({
           type: 'face-visible',
           timestamp: currentTime,
           confidence: result.faces[0]?.confidence || 0.8,
           metadata: {
             faceCount: 1,
-            previousState: 'absent'
+            previousState
           }
         });
+        this.setLastEvent('face-visible', nowMs);
+        this.presenceState.triggered = true;
+        // Clear previous triggers after successful recovery
+        this.absenceState.triggered = false;
+        this.multipleFacesState.triggered = false;
       }
-      
-      if (this.multipleFacesState.triggered) {
-        // If multiple faces was triggered, also emit face-visible for clarity
-        this.emitFocusEvent({
-          type: 'face-visible',
-          timestamp: currentTime,
-          confidence: result.faces[0]?.confidence || 0.8,
-          metadata: {
-            faceCount: 1,
-            previousState: 'multiple-faces'
-          }
-        });
-      }
-      
-      this.absenceState = { frameCount: 0, triggered: false };
-      this.multipleFacesState = { frameCount: 0, triggered: false };
 
       // Only process gaze tracking if we have actual face data
       if (result.faces.length > 0) {
@@ -492,6 +503,21 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     }
   }
 
+  private canEmitEvent(type: FocusEvent['type'], nowMs: number): boolean {
+    // Prevent rapid alternation between absence and face-visible
+    if (this.lastEvent.type) {
+      const sameType = this.lastEvent.type === type;
+      const oppositePair = (this.lastEvent.type === 'absence' && type === 'face-visible') || (this.lastEvent.type === 'face-visible' && type === 'absence');
+      if (sameType && (nowMs - this.lastEvent.time) < this.CROSS_EVENT_COOLDOWN_MS) return false;
+      if (oppositePair && (nowMs - this.lastEvent.time) < this.CROSS_EVENT_COOLDOWN_MS) return false;
+    }
+    return true;
+  }
+
+  private setLastEvent(type: FocusEvent['type'], nowMs: number): void {
+    this.lastEvent = { type, time: nowMs };
+  }
+
   public cleanup(): void {
     this.clearTimer(this.focusLossTimer);
     this.clearTimer(this.absenceTimer);
@@ -511,6 +537,8 @@ export class BlazeFaceDetectionService implements FocusDetectionService {
     // Reset detection states
     this.absenceState = { frameCount: 0, triggered: false };
     this.multipleFacesState = { frameCount: 0, triggered: false };
+    this.presenceState = { frameCount: 0, triggered: false };
+    this.lastEvent = { type: null, time: 0 };
     
     if (this.model) {
       // BlazeFace models don't need explicit disposal
