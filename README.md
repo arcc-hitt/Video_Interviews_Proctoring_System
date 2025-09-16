@@ -1,99 +1,199 @@
 # Video Proctoring System
 
-A comprehensive web application designed to monitor candidates during online interviews using computer vision and machine learning technologies.
+A comprehensive real-time video interview monitoring platform that leverages advanced computer vision and machine learning to ensure interview integrity. Built with modern web technologies, it provides automated detection of focus levels, unauthorized items, and generates detailed proctoring reports.
 
-## 🚀 Quick Deploy
+[![Live Demo](https://img.shields.io/badge/Live-Demo-blue?style=for-the-badge)](https://video-interviews-proctoring-system.vercel.app)
 
-**Backend**: [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
+## Key Features
 
-**Frontend**: [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
-
-📖 **[Complete Deployment Guide](./DEPLOYMENT.md)**
-
-## Project Structure
-
-```
-├── frontend/          # React TypeScript frontend with Vite
-│   ├── src/
-│   │   ├── components/    # React components
-│   │   ├── services/      # API services and CV processing
-│   │   ├── hooks/         # Custom React hooks
-│   │   ├── types/         # TypeScript type definitions
-│   │   ├── utils/         # Utility functions
-│   │   └── lib/           # Shared libraries (Shadcn UI utils)
-│   └── ...
-├── backend/           # Node.js Express TypeScript backend
-│   ├── src/
-│   │   ├── models/        # MongoDB models
-│   │   ├── routes/        # API routes
-│   │   ├── middleware/    # Express middleware
-│   │   ├── services/      # Business logic services
-│   │   ├── utils/         # Utility functions
-│   │   └── types/         # TypeScript type definitions
-│   └── ...
-└── .kiro/             # Kiro specifications and configuration
-```
+- **Real-time Video Monitoring** - Live candidate video streams with WebRTC technology
+- **AI-Powered Detection** - Face detection, gaze tracking, and object recognition using MediaPipe and TensorFlow.js
+- **Focus Analysis** - Automated detection of when candidates look away or leave the frame
+- **Object Detection** - Identifies unauthorized items like phones, books, and electronic devices
+- **Live Alerts** - Instant notifications to interviewers about suspicious activities
+- **Comprehensive Reports** - Detailed proctoring reports with integrity scores and timeline
+- **Role-Based Interface** - Separate dashboards for candidates and interviewers
+- **Export Capabilities** - PDF and CSV report generation for record keeping
+- **Cloud Storage** - Cloudinary integration for scalable video storage and delivery
 
 ## Technology Stack
 
-### Frontend
-- **React 18** with TypeScript
-- **Vite** for fast development and building
-- **Tailwind CSS** for styling
-- **Shadcn UI** for component library
-- **MediaPipe** and **TensorFlow.js** for computer vision
-
-### Backend
-- **Node.js** with Express and TypeScript
-- **MongoDB** with Mongoose ODM
-- **JWT** for authentication
-- **WebSocket** for real-time communication
+**Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Shadcn UI  
+**Backend:** Node.js, Express, TypeScript, Socket.IO  
+**Database:** MongoDB with Mongoose ODM  
+**Computer Vision:** MediaPipe, TensorFlow.js, BlazeFace  
+**Authentication:** JWT with role-based access control  
+**Real-time Communication:** WebSocket for live data streaming  
+**Cloud Storage:** Cloudinary for video recording storage and delivery
 
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js (v18 or higher)
-- MongoDB (local or cloud instance)
-- npm or yarn
+- MongoDB (local installation or cloud instance)
+- npm or yarn package manager
+- Cloudinary account (optional, for cloud video storage)
 
-### Frontend Setup
+### Installation
+
+**Clone the repository:**
 ```bash
-cd frontend
-npm install
+git clone https://github.com/arcc-hitt/Video_Interviews_Proctoring_System.git
+cd Video_Interviews_Proctoring_System
+```
+
+**Install all dependencies:**
+
+Windows (PowerShell/CMD):
+```cmd
+npm run install:all
+```
+
+macOS/Linux:
+```bash
+npm run install:all
+```
+
+### Environment Configuration
+
+**Backend Configuration:**
+```bash
+# Windows
+copy backend\.env.example backend\.env
+
+# macOS/Linux
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env` with your settings:
+```env
+PORT=5000
+NODE_ENV=development
+MONGODB_URI=mongodb://localhost:27017/video-proctoring
+JWT_SECRET=your-super-secret-jwt-key-here
+JWT_EXPIRES_IN=24h
+CORS_ORIGIN=http://localhost:5173
+
+# Cloudinary Configuration (Optional - for cloud video storage)
+CLOUDINARY_CLOUD_NAME=your-cloudinary-cloud-name
+CLOUDINARY_API_KEY=your-cloudinary-api-key
+CLOUDINARY_API_SECRET=your-cloudinary-api-secret
+```
+
+**Frontend Configuration:**
+```bash
+# Windows
+copy frontend\.env.example frontend\.env
+
+# macOS/Linux
+cp frontend/.env.example frontend/.env
+```
+
+Edit `frontend/.env`:
+```env
+VITE_API_BASE_URL=http://localhost:5000
+VITE_WS_URL=ws://localhost:5000
+```
+
+### Running the Application
+
+**Development Mode (both frontend and backend):**
+```bash
 npm run dev
 ```
 
-### Backend Setup
+**Or run separately:**
+
+Backend only:
 ```bash
-cd backend
-npm install
-cp .env.example .env  # Configure your environment variables
-npm run dev
+npm run dev:backend
+# Runs on http://localhost:5000
 ```
 
-## Features
+Frontend only:
+```bash
+npm run dev:frontend
+# Runs on http://localhost:5173
+```
 
-- **Real-time Video Monitoring**: Live video feed with WebRTC
-- **Focus Detection**: Tracks candidate attention and gaze direction
-- **Object Detection**: Identifies unauthorized items (phones, books, etc.)
-- **Alert System**: Real-time notifications for suspicious activities
-- **Report Generation**: Comprehensive proctoring reports with integrity scores
-- **Export Options**: PDF and CSV export capabilities
+## Usage
 
-## Development
+1. **Start MongoDB** - Ensure MongoDB is running locally or configure cloud connection
+2. **Launch Application** - Run `npm run dev` to start both frontend and backend
+3. **Create Accounts** - Register as either candidate or interviewer
+4. **Start Session** - Interviewer creates session, candidate joins with session ID
+5. **Monitor Interview** - Real-time detection and alerts appear on interviewer dashboard
+6. **Generate Reports** - Export detailed proctoring reports after session completion
 
-### Frontend Development
-- Uses Vite for hot module replacement
-- Configured with ESLint and Prettier
-- Shadcn UI components for consistent design
-- Path aliases configured for clean imports
+**Important Audio Note:** When testing with two browser tabs on the same device, you may experience audio feedback (screeching sound). For optimal testing, use two separate devices or mute the audio in the interviewer dashboard.
 
-### Backend Development
-- TypeScript with strict mode enabled
-- Nodemon for automatic server restart
-- ESLint and Prettier for code quality
-- Structured folder organization
+## Cloud Storage Setup (Optional)
 
-## License
+The system supports cloud video storage using Cloudinary for enhanced scalability and reliability:
 
-This project is licensed under the ISC License.
+**Cloudinary Configuration:**
+1. Sign up for a free [Cloudinary account](https://cloudinary.com)
+2. Get your Cloud Name, API Key, and API Secret from the dashboard
+3. Add these credentials to your `backend/.env` file
+4. Video recordings will automatically be stored in Cloudinary when configured
+
+**Benefits of Cloudinary Integration:**
+- Automatic video optimization and compression
+- Global CDN delivery for faster video access
+- Scalable storage without server disk limitations
+- Built-in video transformation capabilities
+
+## Project Structure
+
+```
+├── frontend/                 # React TypeScript frontend
+│   ├── src/
+│   │   ├── components/      # UI components
+│   │   ├── services/        # API and computer vision services
+│   │   ├── hooks/           # Custom React hooks
+│   │   ├── contexts/        # React context providers
+│   │   └── utils/           # Utility functions
+├── backend/                 # Node.js Express backend
+│   ├── src/
+│   │   ├── models/          # MongoDB schemas
+│   │   ├── routes/          # API endpoints
+│   │   ├── services/        # Business logic
+│   │   ├── middleware/      # Express middleware
+│   │   └── utils/           # Backend utilities
+└── shared/                  # Shared TypeScript types
+```
+
+## Available Scripts
+
+**Root Level:**
+- `npm run install:all` - Install dependencies for all packages
+- `npm run dev` - Start both frontend and backend in development
+- `npm run build` - Build both frontend and backend for production
+- `npm run lint` - Run linting for both packages
+
+**Backend:**
+- `npm run dev` - Start development server with hot reload
+- `npm run build` - Compile TypeScript to JavaScript
+- `npm run test` - Run test suite
+- `npm run seed` - Seed database with sample data
+
+**Frontend:**
+- `npm run dev` - Start Vite development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build locally
+- `npm run test` - Run component tests
+
+## Deployment
+
+**Backend:** Deploy to Railway, Render, or similar Node.js hosting platform  
+**Frontend:** Deploy to Vercel, Netlify, or similar static hosting service  
+**Database:** Use MongoDB Atlas for cloud database hosting
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
