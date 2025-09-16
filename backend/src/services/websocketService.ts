@@ -351,6 +351,25 @@ export class WebSocketService {
       case 'unauthorized-item':
         const itemType = metadata?.itemType || 'unknown item';
         return `Unauthorized item detected: ${itemType}`;
+      case 'drowsiness':
+        if (metadata?.drowsinessMetrics) {
+          const s = metadata.drowsinessMetrics.drowsinessScore;
+          return `Drowsiness detected (score ${typeof s === 'number' ? s.toFixed?.(2) ?? s : s})`;
+        }
+        return 'Drowsiness detected';
+      case 'eye-closure':
+        if (metadata?.eyeMetrics?.blinkDuration) {
+          return `Prolonged eye closure (${metadata.eyeMetrics.blinkDuration}ms)`;
+        }
+        return 'Prolonged eye closure detected';
+      case 'excessive-blinking':
+        return 'Excessive blinking detected';
+      case 'background-voice':
+        return 'Background voice detected';
+      case 'multiple-voices':
+        return 'Multiple voices detected';
+      case 'excessive-noise':
+        return 'Excessive background noise detected';
       default:
         return `Detection event: ${eventType}`;
     }
@@ -363,7 +382,14 @@ export class WebSocketService {
       case 'absence':
       case 'multiple-faces':
       case 'unauthorized-item':
+      case 'multiple-voices':
         return 'high';
+      case 'drowsiness':
+      case 'eye-closure':
+      case 'excessive-blinking':
+      case 'background-voice':
+      case 'excessive-noise':
+        return 'medium';
       default:
         return 'low';
     }

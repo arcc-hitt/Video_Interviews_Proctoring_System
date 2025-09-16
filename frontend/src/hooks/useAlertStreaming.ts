@@ -37,6 +37,18 @@ const getEventMessage = (event: DetectionEvent): string => {
       return 'Multiple faces detected';
     case 'unauthorized-item':
       return 'Unauthorized item detected';
+    case 'drowsiness':
+      return 'Drowsiness detected';
+    case 'eye-closure':
+      return 'Prolonged eye closure detected';
+    case 'excessive-blinking':
+      return 'Excessive blinking detected';
+    case 'background-voice':
+      return 'Background voice detected';
+    case 'multiple-voices':
+      return 'Multiple voices detected';
+    case 'excessive-noise':
+      return 'Excessive background noise detected';
     default:
       return `Event: ${event.eventType}`;
   }
@@ -49,6 +61,13 @@ const getEventSeverity = (eventType: string): 'low' | 'medium' | 'high' => {
     case 'absence':
     case 'multiple-faces':
     case 'unauthorized-item':
+    case 'multiple-voices':
+      return 'high';
+    case 'drowsiness':
+    case 'eye-closure':
+    case 'excessive-blinking':
+    case 'background-voice':
+    case 'excessive-noise':
       return 'high';
     default:
       return 'low';

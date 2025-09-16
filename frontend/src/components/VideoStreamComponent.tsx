@@ -19,6 +19,7 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
   onRecordingStart,
   onRecordingStop,
   onError,
+  onWorkerResult,
   showRecordingControls = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -30,12 +31,10 @@ export const VideoStreamComponent: React.FC<VideoStreamProps> = ({
 
   // Initialize CV Worker for offloaded processing
   const cvWorker = useCVWorker({
-    onResult: (_result) => {
-      // Process the result and call the frame capture callback
-      if (onFrameCapture) {
-        // Convert worker result to ImageData format expected by onFrameCapture
-        const imageData = new ImageData(1, 1); // Placeholder - actual implementation would extract from result
-        onFrameCapture(imageData);
+    onResult: (result) => {
+      // Forward light-weight results to parent for optional consumption (e.g., drowsiness EAR)
+      if (typeof onWorkerResult === 'function') {
+        onWorkerResult(result as any);
       }
     },
     onError: (error) => {

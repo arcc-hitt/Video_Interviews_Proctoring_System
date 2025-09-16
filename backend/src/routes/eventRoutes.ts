@@ -46,27 +46,17 @@ router.post('/',
 
       // Check if user has permission to log events for this session
       if (req.user!.role === UserRole.CANDIDATE) {
-        // Allow candidates to log events if:
-        // 1. Their userId matches the session's candidateId, OR
-        // 2. Their email matches the session's candidateEmail, OR
-        // 3. They are participating in the session via WebSocket (we can add this check later)
-        const userIdMatches = session.candidateId === req.user!.userId;
-        const emailMatches = session.candidateEmail && session.candidateEmail === req.user!.email;
-        const eventCandidateMatches = eventData.candidateId === req.user!.userId;
-        
-        if (!userIdMatches && !emailMatches && !eventCandidateMatches) {
+        // Strict rule: candidate can only log events for themselves in their own session
+        const isSessionCandidate = session.candidateId === req.user!.userId;
+        const isEventForSelf = eventData.candidateId === req.user!.userId;
+
+        if (!isSessionCandidate || !isEventForSelf) {
           const response: ApiResponse = {
             success: false,
             error: 'Access denied. Cannot log events for this session.'
           };
           res.status(403).json(response);
           return;
-        }
-        
-        // If the candidate is authorized but the event candidateId doesn't match,
-        // update the event candidateId to match the authenticated user
-        if (eventData.candidateId !== req.user!.userId) {
-          eventData.candidateId = req.user!.userId;
         }
       }
 
@@ -263,10 +253,16 @@ router.get('/:sessionId/summary',
 
       // Calculate integrity score (basic implementation)
       let integrityScore = 100;
-      const focusLossCount = summaryByType[EventType.FOCUS_LOSS]?.count || 0;
+  const focusLossCount = summaryByType[EventType.FOCUS_LOSS]?.count || 0;
       const absenceCount = summaryByType[EventType.ABSENCE]?.count || 0;
       const multipleFacesCount = summaryByType[EventType.MULTIPLE_FACES]?.count || 0;
       const unauthorizedItemsCount = summaryByType[EventType.UNAUTHORIZED_ITEM]?.count || 0;
+  const drowsinessCount = summaryByType[EventType.DROWSINESS]?.count || 0;
+  const eyeClosureCount = summaryByType[EventType.EYE_CLOSURE]?.count || 0;
+  const excessiveBlinkingCount = summaryByType[EventType.EXCESSIVE_BLINKING]?.count || 0;
+  const backgroundVoiceCount = summaryByType[EventType.BACKGROUND_VOICE]?.count || 0;
+  const multipleVoicesCount = summaryByType[EventType.MULTIPLE_VOICES]?.count || 0;
+  const excessiveNoiseCount = summaryByType[EventType.EXCESSIVE_NOISE]?.count || 0;
 
       // Calculate individual deductions
       const focusLossDeduction = focusLossCount * 2;
@@ -323,7 +319,13 @@ router.get('/:sessionId/summary',
           focusLoss: focusLossCount,
           absence: absenceCount,
           multipleFaces: multipleFacesCount,
-          unauthorizedItems: unauthorizedItemsCount
+          unauthorizedItems: unauthorizedItemsCount,
+          drowsiness: drowsinessCount,
+          eyeClosure: eyeClosureCount,
+          excessiveBlinking: excessiveBlinkingCount,
+          backgroundVoice: backgroundVoiceCount,
+          multipleVoices: multipleVoicesCount,
+          excessiveNoise: excessiveNoiseCount
         }
       };
 
