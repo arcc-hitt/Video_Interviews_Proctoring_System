@@ -4,7 +4,7 @@ interface UseScreenRecordingOptions {
 	sessionId: string;
 	candidateId: string;
 	filenamePrefix?: string;
-	chunkSizeBytes?: number; // default 5MB to match backend
+	chunkSizeBytes?: number; // default 8MB (kept below backend default 10MB)
 }
 
 interface RecordingState {
@@ -15,7 +15,7 @@ interface RecordingState {
 }
 
 export function useScreenRecording(options: UseScreenRecordingOptions) {
-	const { sessionId, candidateId, filenamePrefix = 'recording', chunkSizeBytes = 5 * 1024 * 1024 } = options;
+	const { sessionId, candidateId, filenamePrefix = 'recording', chunkSizeBytes = 8 * 1024 * 1024 } = options;
 
 	const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 	const recordedChunksRef = useRef<Blob[]>([]);
@@ -67,13 +67,12 @@ export function useScreenRecording(options: UseScreenRecordingOptions) {
 					const containerType = isMp4 ? 'video/mp4' : 'video/webm';
 					const blob = new Blob(recordedChunksRef.current, { type: containerType });
 					const filename = `${filenamePrefix}_${sessionId}_${Date.now()}.${isMp4 ? 'mp4' : 'webm'}`;
-					// Slice into chunks and upload sequentially
-					const totalChunks = Math.ceil(blob.size / chunkSizeBytes);
 					const token = localStorage.getItem('auth_token');
-						const { sessionId: sid, candidateId: cid } = metaRef.current;
-						if (!sid || !cid) {
-							throw new Error('Missing session or candidate information for upload');
-						}
+					const { sessionId: sid, candidateId: cid } = metaRef.current;
+					if (!sid || !cid) {
+						throw new Error('Missing session or candidate information for upload');
+					}
+					const totalChunks = Math.ceil(blob.size / chunkSizeBytes);
 					let uploaded = 0;
 					for (let i = 0; i < totalChunks; i++) {
 						const start = i * chunkSizeBytes;
@@ -81,8 +80,8 @@ export function useScreenRecording(options: UseScreenRecordingOptions) {
 						const chunkBlob = blob.slice(start, end, containerType);
 						const form = new FormData();
 						form.append('chunk', new File([chunkBlob], filename, { type: containerType }));
-							form.append('sessionId', sid);
-							form.append('candidateId', cid);
+						form.append('sessionId', sid);
+						form.append('candidateId', cid);
 						form.append('chunkIndex', String(i));
 						form.append('totalChunks', String(totalChunks));
 						form.append('filename', filename);
@@ -93,6 +92,11 @@ export function useScreenRecording(options: UseScreenRecordingOptions) {
 							body: form
 						});
 						if (!res.ok) {
+							if (res.status === 413) {
+								const data = await res.json().catch(() => ({}));
+								const maxMb = data?.maxChunkBytes ? Math.round(data.maxChunkBytes / (1024 * 1024)) : undefined;
+								throw new Error(`Chunk too large for server.${maxMb ? ` Max ${maxMb}MB per chunk.` : ''} Please retry.`);
+							}
 							const data = await res.json().catch(() => ({}));
 							throw new Error(data.error || data.message || `Upload failed at chunk ${i + 1}/${totalChunks}`);
 						}

@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import multer from 'multer';
+import type { MulterError } from 'multer';
 import { videoStorageService } from '../services/videoStorageService';
 import { VideoUploadSchema } from '../types';
 import { validateRequest } from '../middleware/validation';
@@ -22,10 +23,16 @@ router.get('/health', (req: Request, res: Response): void => {
 });
 
 // Configure multer for memory storage
+// Allow configuring chunk size via env: UPLOAD_MAX_CHUNK_MB (default 10MB)
+const MAX_CHUNK_MB = Number(process.env.UPLOAD_MAX_CHUNK_MB || 10);
+const MAX_CHUNK_BYTES = Math.max(1, Math.floor(MAX_CHUNK_MB)) * 1024 * 1024;
+
+export const getMaxChunkBytes = () => MAX_CHUNK_BYTES;
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB per chunk
+    fileSize: MAX_CHUNK_BYTES, // per chunk limit
   },
   fileFilter: (req, file, cb) => {
     // Accept video files; allow octet-stream if filename looks like a supported video
@@ -47,7 +54,25 @@ const upload = multer({
  * POST /api/videos/upload
  * Upload video chunk
  */
-router.post('/upload', authenticate, uploadLimiter, upload.single('chunk'), async (req: Request, res: Response): Promise<void> => {
+router.post('/upload', authenticate, uploadLimiter, (req: Request, res: Response, next): void => {
+  // Wrap multer to handle MulterError (e.g., LIMIT_FILE_SIZE) with a friendly 413
+  const handler = upload.single('chunk');
+  handler(req as any, res as any, (err?: any) => {
+    if (err) {
+      const mErr = err as MulterError & { code?: string };
+      if (mErr && (mErr as any).code === 'LIMIT_FILE_SIZE') {
+        res.status(413).json({
+          success: false,
+          error: `Chunk too large. Max allowed per chunk is ${Math.round(MAX_CHUNK_BYTES / (1024 * 1024))}MB`,
+          maxChunkBytes: MAX_CHUNK_BYTES
+        });
+        return;
+      }
+      return next(err);
+    }
+    next();
+  });
+}, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({

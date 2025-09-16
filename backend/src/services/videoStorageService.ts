@@ -40,7 +40,8 @@ export class VideoStorageService {
   private uploadSessions: Map<string, VideoUploadSession> = new Map();
   private readonly uploadDir: string;
   private readonly tempDir: string;
-  private readonly maxChunkSize = 5 * 1024 * 1024; // 5MB
+  // Max per-chunk size (bytes). Keep in sync with multer limit in routes.
+  private readonly maxChunkSize = Math.max(1, Math.floor(Number(process.env.UPLOAD_MAX_CHUNK_MB || 10))) * 1024 * 1024; // default 10MB
   private readonly sessionTimeout = 30 * 60 * 1000; // 30 minutes
 
   constructor() {
