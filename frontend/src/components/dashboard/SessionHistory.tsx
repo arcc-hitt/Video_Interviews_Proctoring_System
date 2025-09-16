@@ -1,5 +1,17 @@
 import React, { useEffect, useState } from 'react';
+import { RefreshCw, History } from 'lucide-react';
 import apiService from '../../services/apiService';
+import { 
+  Card, 
+  CardContent, 
+  CardHeader, 
+  CardTitle, 
+  Button,
+  SessionCard,
+  LoadingState,
+  EmptyState,
+  ErrorState
+} from '../ui';
 
 type HistorySession = {
 	sessionId: string;
@@ -115,95 +127,75 @@ export const SessionHistory: React.FC = () => {
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [sessions.length]);
 
-	const formatDuration = (seconds?: number) => {
-		if (!seconds && seconds !== 0) return '-';
-		const m = Math.floor(seconds / 60);
-		const s = seconds % 60;
-		return `${m}:${s.toString().padStart(2, '0')}`;
-		};
-
 	return (
-		<div className="bg-white shadow rounded-lg p-6 mt-6">
-			<div className="flex justify-between items-center mb-4">
-				<h2 className="text-lg font-medium text-gray-900">Session History</h2>
-				<button
-					onClick={() => fetchHistory(0)}
-					className="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 rounded hover:bg-blue-100"
-				>
-					Refresh
-				</button>
-			</div>
-
-			{error && (
-				<div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded mb-4">
-					{error}
-				</div>
-			)}
-
-			{isLoading && sessions.length === 0 ? (
-				<div className="text-center py-8 text-gray-500">Loading history...</div>
-			) : sessions.length === 0 ? (
-				<div className="text-center py-8 text-gray-500">No past sessions found</div>
-			) : (
-				<div className="space-y-3">
-					{sessions.map((s) => (
-						<div key={s.sessionId} className="border border-gray-200 rounded p-4">
-							<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-								<div>
-									<div className="font-medium text-gray-900">{s.candidateName}</div>
-									<div className="text-sm text-gray-500">{new Date(s.startTime).toLocaleString()} → {s.endTime ? new Date(s.endTime).toLocaleString() : '-'}</div>
-									<div className="text-xs text-gray-500">Session: {s.sessionId}</div>
-								</div>
-								<div className="flex items-center gap-2">
-									<span className={`px-2 py-1 text-xs rounded-full ${s.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{s.status}</span>
-									<span className="text-xs text-gray-600">Duration: {formatDuration(s.duration)}</span>
-								</div>
-								<div className="flex items-center gap-2">
-														{s.recordingUrl ? (
-															<a
-																href={s.recordingUrl.startsWith('http') ? s.recordingUrl : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}${s.recordingUrl}`}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="px-3 py-1 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800"
-										>
-											Download Recording
-										</a>
-									) : (
-										<button className="px-3 py-1 text-sm font-medium text-gray-500 bg-gray-100 rounded cursor-not-allowed" disabled>
-											No Recording
-										</button>
-									)}
-									{s.reportId ? (
-																		<button
-																			onClick={() => handleDownloadReport(s.reportId!)}
-																			className="px-3 py-1 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-																		>
-																			Download Report (PDF)
-																		</button>
-									) : (
-										<button className="px-3 py-1 text-sm font-medium text-gray-500 bg-gray-100 rounded cursor-not-allowed" disabled>
-											No Report
-										</button>
-									)}
-								</div>
-							</div>
-						</div>
-					))}
-				</div>
-			)}
-
-			{hasMore && (
-				<div className="mt-4 flex justify-center">
-					<button
-						onClick={() => fetchHistory(offset + limit)}
-						className="px-4 py-2 text-sm font-medium text-white bg-gray-800 rounded hover:bg-black disabled:opacity-50"
+		<Card className="mt-6">
+			<CardHeader>
+				<div className="flex items-center justify-between">
+					<div className="flex items-center gap-2">
+						<History className="h-5 w-5 text-muted-foreground" />
+						<CardTitle className="text-lg">Session History</CardTitle>
+					</div>
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => fetchHistory(0)}
 						disabled={isLoading}
+						className="flex items-center gap-2"
 					>
-						{isLoading ? 'Loading...' : 'Load More'}
-					</button>
+						<RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+						Refresh
+					</Button>
 				</div>
-			)}
-		</div>
+			</CardHeader>
+
+			<CardContent>
+				{error && (
+					<div className="mb-4">
+						<ErrorState error={error} onDismiss={() => setError(null)} />
+					</div>
+				)}
+
+				{isLoading && sessions.length === 0 ? (
+					<LoadingState text="Loading session history..." />
+				) : sessions.length === 0 ? (
+					<EmptyState 
+						icon="calendar"
+						title="No past sessions found"
+						description="Interview sessions you've completed will appear here."
+					/>
+				) : (
+					<div className="space-y-4">
+						{sessions.map((session) => (
+							<SessionCard
+								key={session.sessionId}
+								session={session}
+								onDownloadReport={handleDownloadReport}
+							/>
+						))}
+					</div>
+				)}
+
+				{hasMore && (
+					<div className="mt-6 flex justify-center">
+						<Button
+							variant="outline"
+							onClick={() => fetchHistory(offset + limit)}
+							disabled={isLoading}
+							className="flex items-center gap-2"
+						>
+							{isLoading ? (
+								<>
+									<RefreshCw className="h-4 w-4 animate-spin" />
+									Loading...
+								</>
+							) : (
+								'Load More Sessions'
+							)}
+						</Button>
+					</div>
+				)}
+			</CardContent>
+		</Card>
 	);
 };
 
