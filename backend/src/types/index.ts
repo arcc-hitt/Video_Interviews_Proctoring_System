@@ -175,7 +175,12 @@ export const ProctoringReportSchema = z.object({
   suspiciousEvents: z.array(SuspiciousEventSchema),
   manualObservations: z.array(ManualObservationSchema).optional(),
   generatedAt: z.date(),
-  metadata: z.record(z.string(), z.any()).optional()
+  metadata: z.record(z.string(), z.any()).optional(),
+  // Cloudinary storage URLs for generated reports
+  cloudinaryPdfUrl: z.string().url().optional(),
+  cloudinaryPdfPublicId: z.string().optional(),
+  cloudinaryCsvUrl: z.string().url().optional(),
+  cloudinaryCsvPublicId: z.string().optional()
 });
 
 // Auth User Schema

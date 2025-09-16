@@ -138,6 +138,17 @@ export interface ProctoringReport {
   integrityScore: number;
   suspiciousEvents: SuspiciousEvent[];
   generatedAt: Date;
+  // Cloudinary storage URLs for generated reports
+  cloudinaryPdfUrl?: string;
+  cloudinaryPdfPublicId?: string;
+  cloudinaryCsvUrl?: string;
+  cloudinaryCsvPublicId?: string;
+}
+
+export interface ReportCloudLinks {
+  pdfUrl?: string | null;
+  csvUrl?: string | null;
+  available: boolean;
 }
 
 export interface AuthUser {

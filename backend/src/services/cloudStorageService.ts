@@ -63,6 +63,88 @@ export class CloudStorageService {
 			format: res.format
 		};
 	}
+
+	/**
+	 * Upload document (PDF, CSV, etc.) from buffer
+	 */
+	public async uploadDocument(buffer: Buffer, filename: string, options?: UploadApiOptions): Promise<CloudinaryUploadResult> {
+		if (!this.isEnabled()) {
+			throw new Error('Cloudinary not configured');
+		}
+
+		const baseOptions = {
+			resource_type: 'raw' as const,
+			folder: options?.folder || 'video-interviews/reports',
+			use_filename: true,
+			unique_filename: true,
+			overwrite: false
+		};
+
+		const publicId = options?.public_id || filename.split('.')[0];
+		
+		const uploadOptions = {
+			...baseOptions,
+			...options,
+			public_id: publicId
+		} as UploadApiOptions;
+
+		return new Promise((resolve, reject) => {
+			cloudinary.uploader.upload_stream(
+				uploadOptions,
+				(error, result) => {
+					if (error) {
+						reject(error);
+					} else if (result) {
+						resolve({
+							url: result.secure_url,
+							publicId: result.public_id,
+							bytes: result.bytes,
+							format: result.format
+						});
+					} else {
+						reject(new Error('Upload failed - no result'));
+					}
+				}
+			).end(buffer);
+		});
+	}
+
+	/**
+	 * Upload document from file path
+	 */
+	public async uploadDocumentFromPath(filePath: string, options?: UploadApiOptions): Promise<CloudinaryUploadResult> {
+		if (!this.isEnabled()) {
+			throw new Error('Cloudinary not configured');
+		}
+
+		const uploadOptions: UploadApiOptions = {
+			resource_type: 'raw',
+			folder: options?.folder || 'video-interviews/reports',
+			use_filename: true,
+			unique_filename: true,
+			overwrite: false,
+			...options
+		};
+
+		const res = await cloudinary.uploader.upload(filePath, uploadOptions);
+		return {
+			url: res.secure_url,
+			publicId: res.public_id,
+			bytes: res.bytes,
+			format: res.format
+		};
+	}
+
+	/**
+	 * Delete file from Cloudinary
+	 */
+	public async deleteFile(publicId: string, resourceType: 'image' | 'video' | 'raw' = 'raw'): Promise<void> {
+		if (!this.isEnabled()) {
+			throw new Error('Cloudinary not configured');
+		}
+
+		await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+	}
 }
 
 export const cloudStorageService = new CloudStorageService();

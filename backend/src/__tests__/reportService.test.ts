@@ -332,4 +332,96 @@ describe('ReportService', () => {
       expect(savedReport.unauthorizedItemsCount).toBe(1);
     });
   });
+
+  describe('Cloudinary Integration', () => {
+    // Mock cloudStorageService
+    const mockCloudStorageService = {
+      isEnabled: jest.fn(),
+      uploadDocument: jest.fn()
+    };
+
+    beforeEach(() => {
+      // Mock the cloudStorageService import
+      jest.doMock('../services/cloudStorageService', () => ({
+        cloudStorageService: mockCloudStorageService
+      }));
+    });
+
+    it('should upload reports to Cloudinary when enabled', async () => {
+      // Enable Cloudinary
+      mockCloudStorageService.isEnabled.mockReturnValue(true);
+      mockCloudStorageService.uploadDocument
+        .mockResolvedValueOnce({
+          url: 'https://res.cloudinary.com/test/report.pdf',
+          publicId: 'reports/report-pdf'
+        })
+        .mockResolvedValueOnce({
+          url: 'https://res.cloudinary.com/test/report.csv',
+          publicId: 'reports/report-csv'
+        });
+
+      // Mock database operations
+      const mockSession = {
+        sessionId: mockSessionId,
+        candidateId: mockCandidateId,
+        candidateName: 'John Doe',
+        duration: 3600,
+        calculateDuration: jest.fn().mockReturnValue(3600)
+      };
+
+      jest.spyOn(InterviewSession, 'findOne').mockResolvedValue(mockSession);
+      jest.spyOn(DetectionEvent, 'findBySession').mockResolvedValue([]);
+      jest.spyOn(ManualObservation, 'findBySession').mockResolvedValue([]);
+
+      const savedReport = {
+        save: jest.fn(),
+        cloudinaryPdfUrl: undefined,
+        cloudinaryPdfPublicId: undefined,
+        cloudinaryCsvUrl: undefined,
+        cloudinaryCsvPublicId: undefined
+      };
+      jest.spyOn(ProctoringReport.prototype, 'save').mockImplementation(function(this: any) {
+        Object.assign(this, savedReport);
+        return Promise.resolve(this);
+      });
+
+      const reportId = await ReportService.generateReport(mockSessionId, true);
+
+      // Wait for async processing
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Verify Cloudinary uploads were called
+      expect(mockCloudStorageService.uploadDocument).toHaveBeenCalledTimes(2);
+      expect(savedReport.save).toHaveBeenCalledTimes(2); // Once initially, once after Cloudinary upload
+    });
+
+    it('should continue gracefully when Cloudinary upload fails', async () => {
+      // Enable Cloudinary but make it fail
+      mockCloudStorageService.isEnabled.mockReturnValue(true);
+      mockCloudStorageService.uploadDocument.mockRejectedValue(new Error('Upload failed'));
+
+      // Mock database operations
+      const mockSession = {
+        sessionId: mockSessionId,
+        candidateId: mockCandidateId,
+        candidateName: 'John Doe',
+        duration: 3600,
+        calculateDuration: jest.fn().mockReturnValue(3600)
+      };
+
+      jest.spyOn(InterviewSession, 'findOne').mockResolvedValue(mockSession);
+      jest.spyOn(DetectionEvent, 'findBySession').mockResolvedValue([]);
+      jest.spyOn(ManualObservation, 'findBySession').mockResolvedValue([]);
+      jest.spyOn(ProctoringReport.prototype, 'save').mockResolvedValue(undefined);
+
+      const reportId = await ReportService.generateReport(mockSessionId, true);
+
+      // Wait for async processing
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Report generation should still complete successfully
+      const status = ReportService.getReportStatus(reportId);
+      expect(status?.status).toBe('completed');
+    });
+  });
 });

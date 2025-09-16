@@ -131,7 +131,7 @@ router.get('/:reportId',
 
 /**
  * GET /api/reports/:reportId/export
- * Export report as PDF or CSV
+ * Export report as PDF or CSV (checks Cloudinary first, generates if needed)
  */
 router.get('/:reportId/export',
   authenticate,
@@ -142,6 +142,20 @@ router.get('/:reportId/export',
       const { reportId } = req.params;
       const { format, includeManualObservations } = (req as any).validatedQuery;
       
+      // First check if we have Cloudinary URLs available
+      const report = await ReportService.getReport(reportId as string);
+      
+      if (format === 'pdf' && report.cloudinaryPdfUrl) {
+        // Redirect to Cloudinary URL for faster delivery
+        res.redirect(report.cloudinaryPdfUrl);
+        return;
+      } else if (format === 'csv' && report.cloudinaryCsvUrl) {
+        // Redirect to Cloudinary URL for faster delivery
+        res.redirect(report.cloudinaryCsvUrl);
+        return;
+      }
+      
+      // Generate file if not available in Cloudinary
       let buffer: Buffer;
       let contentType: string;
       let filename: string;
@@ -167,6 +181,40 @@ router.get('/:reportId/export',
       res.status(statusCode).json({
         success: false,
         error: error instanceof Error ? error.message : 'Failed to export report'
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/reports/:reportId/cloud-links
+ * Get Cloudinary URLs for report files
+ */
+router.get('/:reportId/cloud-links',
+  authenticate,
+  validateParams(ReportParamsSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { reportId } = req.params;
+      
+      const report = await ReportService.getReport(reportId as string);
+      
+      const cloudLinks = {
+        pdfUrl: report.cloudinaryPdfUrl || null,
+        csvUrl: report.cloudinaryCsvUrl || null,
+        available: !!(report.cloudinaryPdfUrl || report.cloudinaryCsvUrl)
+      };
+      
+      res.json({
+        success: true,
+        data: cloudLinks
+      });
+    } catch (error) {
+      console.error('Error getting cloud links:', error);
+      const statusCode = error instanceof Error && error.message.includes('not found') ? 404 : 500;
+      res.status(statusCode).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get cloud links'
       });
     }
   }
