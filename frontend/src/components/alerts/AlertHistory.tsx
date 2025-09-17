@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Alert } from '../../types';
-import { Download, Search, Clock, AlertTriangle } from 'lucide-react';
+import { Download, Search, Clock, AlertTriangle, Eye, X, Users, Smartphone, Flag } from 'lucide-react';
 import { 
   safeParseDate, 
   safeFormatDate, 
@@ -159,19 +159,24 @@ export const AlertHistory: React.FC<AlertHistoryProps> = ({
     }
   };
 
-  // Get type icon and label
+  // Get type icon and label (use consistent lucide icons instead of emojis)
   const getTypeInfo = (type: Alert['type']) => {
+    const base = 'w-4 h-4';
     switch (type) {
       case 'focus-loss':
-        return { label: 'Focus Loss', icon: '👁️' };
+        return { label: 'Focus Loss', icon: <Eye className={base + ' text-blue-600'} /> };
       case 'absence':
-        return { label: 'Absence', icon: '❌' };
+        return { label: 'Absence', icon: <X className={base + ' text-red-600'} /> };
       case 'multiple-faces':
-        return { label: 'Multiple Faces', icon: '👥' };
+        return { label: 'Multiple Faces', icon: <Users className={base + ' text-purple-600'} /> };
       case 'unauthorized-item':
-        return { label: 'Unauthorized Item', icon: '📱' };
+        return { label: 'Unauthorized Item', icon: <Smartphone className={base + ' text-orange-600'} /> };
+      case 'face-visible':
+        return { label: 'Face Visible', icon: <Eye className={base + ' text-green-600'} /> };
+      case 'manual_flag':
+        return { label: 'Manual Flag', icon: <Flag className={base + ' text-orange-600'} /> };
       default:
-        return { label: 'Unknown', icon: '⚠️' };
+        return { label: 'Unknown', icon: <AlertTriangle className={base + ' text-gray-500'} /> };
     }
   };
 
@@ -356,7 +361,9 @@ export const AlertHistory: React.FC<AlertHistoryProps> = ({
                 <div key={entry.id} className="p-4 hover:bg-gray-50">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-3 flex-1">
-                      <div className="text-lg">{typeInfo.icon}</div>
+                      <div className="mt-0.5 flex items-center justify-center w-6 h-6 rounded bg-gray-100">
+                        {typeInfo.icon}
+                      </div>
                       
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2 mb-1">

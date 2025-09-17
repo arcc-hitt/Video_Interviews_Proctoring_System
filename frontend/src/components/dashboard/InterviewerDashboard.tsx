@@ -3,7 +3,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import type { InterviewSession } from '../../types';
 import { io, Socket } from 'socket.io-client';
 import { AlertManagementPanel } from '../alerts';
-import { ReportDashboard } from './ReportDashboard';
 import SessionHistory from './SessionHistory';
 import { useAlertStreaming } from '../../hooks/useAlertStreaming';
 import { toast } from 'sonner';
@@ -31,7 +30,7 @@ export const InterviewerDashboard: React.FC = () => {
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUsers | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showReportDashboard, setShowReportDashboard] = useState(false);
+  // Report dashboard moved to dedicated route; overlay state removed
   const [showCreateSession, setShowCreateSession] = useState(false);
   const [newSessionData, setNewSessionData] = useState({
     candidateName: '',
@@ -59,6 +58,8 @@ export const InterviewerDashboard: React.FC = () => {
   const socketRef = useRef<Socket | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  // Cache latest remote stream so we can reattach after UI toggles
+  const remoteStreamRef = useRef<MediaStream | null>(null);
 
   // Alert streaming hook
   const {
@@ -288,37 +289,29 @@ export const InterviewerDashboard: React.FC = () => {
     };
 
     pc.ontrack = (event) => {
-      if (videoRef.current && event.streams[0]) {
-        // Stop any existing video playback to prevent conflicts
-        if (videoRef.current.srcObject) {
-          videoRef.current.pause();
-          videoRef.current.srcObject = null;
-        }
-        
-        // Set the new stream
-        videoRef.current.srcObject = event.streams[0];
-        setIsVideoStreamActive(true);
-        setVideoStreamStatus('connected');
-        
-        // Play the video with error handling
-        const playPromise = videoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              // Video started successfully
-            })
-            .catch((error) => {
-              console.warn('Video playback failed, retrying...', error);
-              // Try again after a short delay
+      const stream = event.streams[0];
+      if (!stream) return;
+      remoteStreamRef.current = stream;
+      if (videoRef.current && videoRef.current.srcObject !== stream) {
+        // Do not pause/clear first to avoid AbortError play/pause race
+        videoRef.current.srcObject = stream;
+      }
+      setIsVideoStreamActive(true);
+      setVideoStreamStatus('connected');
+      if (videoRef.current) {
+        const attempt = () => {
+          const p = videoRef.current!.play();
+            p && p.catch(err => {
+              console.warn('Initial video play attempt failed:', err);
+              // Retry once after small delay (UI transitions can interrupt autoplay)
               setTimeout(() => {
                 if (videoRef.current && videoRef.current.srcObject) {
-                  videoRef.current.play().catch((retryError) => {
-                    console.error('Video playback retry failed:', retryError);
-                  });
+                  videoRef.current.play().catch(() => {/* swallow */});
                 }
-              }, 500);
+              }, 300);
             });
-        }
+        };
+        attempt();
       }
     };
 
@@ -728,31 +721,10 @@ export const InterviewerDashboard: React.FC = () => {
     logout();
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show report dashboard if requested
-  if (showReportDashboard && selectedSession) {
-    return (
-      <ReportDashboard
-        sessionId={selectedSession.sessionId}
-        session={selectedSession}
-        alerts={alerts}
-        onClose={() => setShowReportDashboard(false)}
-      />
-    );
-  }
+  // No conditional return above this line; hook order remains stable.
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 relative">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -769,7 +741,12 @@ export const InterviewerDashboard: React.FC = () => {
               {selectedSession && (
                 <>
                   <button
-                    onClick={() => setShowReportDashboard(true)}
+                    onClick={() => {
+                      if (selectedSession) {
+                        const url = `/report/${selectedSession.sessionId}`;
+                        window.open(url, '_blank', 'noopener');
+                      }
+                    }}
                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700"
                   >
                     View Report
@@ -1263,6 +1240,15 @@ export const InterviewerDashboard: React.FC = () => {
                 Done
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Loading state (rendered inline to avoid hook order changes) */}
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-50/80 z-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading dashboard...</p>
           </div>
         </div>
       )}

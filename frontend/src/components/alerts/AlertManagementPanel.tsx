@@ -86,19 +86,22 @@ export const AlertManagementPanel: React.FC<AlertManagementPanelProps> = ({
 
   // Get alert icon
   const getAlertIcon = (type: string) => {
-    const iconProps = { size: 20, className: "flex-shrink-0" };
-    
+    const base = "flex-shrink-0 w-5 h-5";
     switch (type) {
       case 'focus-loss':
-        return <Eye {...iconProps} />;
+        return <Eye className={`${base} text-blue-600`} />;
       case 'absence':
-        return <X {...iconProps} />;
+        return <X className={`${base} text-red-600`} />;
       case 'multiple-faces':
-        return <Users {...iconProps} />;
+        return <Users className={`${base} text-purple-600`} />;
       case 'unauthorized-item':
-        return <Smartphone {...iconProps} />;
+        return <Smartphone className={`${base} text-orange-600`} />;
+      case 'face-visible':
+        return <Eye className={`${base} text-green-600`} />;
+      case 'manual_flag':
+        return <Flag className={`${base} text-orange-500`} />;
       default:
-        return <AlertTriangle {...iconProps} />;
+        return <AlertTriangle className={`${base} text-gray-500`} />;
     }
   };
 

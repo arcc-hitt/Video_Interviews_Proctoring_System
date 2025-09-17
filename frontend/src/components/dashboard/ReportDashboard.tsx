@@ -9,7 +9,7 @@ import {
   AlertTriangle, 
   Eye, 
   Users, 
-  Phone, 
+  Smartphone as Phone, 
   X,
   Flag,
   BarChart3,
@@ -19,6 +19,7 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react';
+import { getAlertTypeInfo } from '../alerts/alertTypeMap';
 import { 
   safeParseDate, 
   safeFormatDate, 
@@ -38,22 +39,12 @@ interface LiveSessionSummary {
   integrityScore: number;
   integrityBreakdown?: {
     baseScore: number;
-    deductions: {
-      focusLoss: number;
-      absence: number;
-      multipleFaces: number;
-      unauthorizedItems: number;
-      manualObservations: number;
-      total: number;
-    };
+    deductions: Record<string, number> & { total: number };
     finalScore: number;
     formula: string;
   };
-  totalEvents: number;
-  focusLossCount: number;
-  absenceCount: number;
-  multipleFacesCount: number;
-  unauthorizedItemsCount: number;
+  totalEvents: number; // violation events only (excludes recovery like face-visible)
+  counts: Record<string, number>; // raw counts per type
   sessionDuration: number;
   lastEventTime?: Date;
 }
@@ -84,10 +75,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
   const [liveSummary, setLiveSummary] = useState<LiveSessionSummary>({
     integrityScore: 100,
     totalEvents: 0,
-    focusLossCount: 0,
-    absenceCount: 0,
-    multipleFacesCount: 0,
-    unauthorizedItemsCount: 0,
+    counts: {},
     sessionDuration: 0
   });
   
@@ -127,56 +115,77 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
   }, [session.startTime, session.endTime]);
 
   // Calculate live summary from alerts and events
-  const calculateLiveSummary = useCallback((events: DetectionEvent[], observations: ManualObservation[]): LiveSessionSummary => {
+  const calculateLiveSummary = useCallback((events: DetectionEvent[], observations: ManualObservation[], rawAlerts: Alert[]): LiveSessionSummary => {
     try {
       // Validate inputs
       const safeEvents = Array.isArray(events) ? events : [];
       const safeObservations = Array.isArray(observations) ? observations : [];
 
-      const eventCounts = {
-        focusLoss: safeEvents.filter(e => e.eventType === 'focus-loss').length,
-        absence: safeEvents.filter(e => e.eventType === 'absence').length,
-        faceVisible: safeEvents.filter(e => e.eventType === 'face-visible').length,
-        multipleFaces: safeEvents.filter(e => e.eventType === 'multiple-faces').length,
-        unauthorizedItems: safeEvents.filter(e => e.eventType === 'unauthorized-item').length
+      // Derive counts from alerts (more authoritative for real-time view)
+      const safeAlerts = Array.isArray(rawAlerts) ? rawAlerts : [];
+      const counts: Record<string, number> = {};
+      safeAlerts.forEach(a => { counts[a.type] = (counts[a.type] || 0) + 1; });
+
+      // Include legacy detectionEvents (in case some events not surfaced as alerts yet)
+      safeEvents.forEach(e => { counts[e.eventType] = (counts[e.eventType] || 0) + 1; });
+
+      // Filter violation events (exclude recovery types like face-visible)
+      const violationTypes = Object.keys(counts).filter(t => getAlertTypeInfo(t).isViolation);
+      const violationEvents = violationTypes.reduce((sum, t) => sum + counts[t], 0);
+
+      // Calculate integrity score via rule table
+      let integrityScore = 100;
+      const deductions: Record<string, number> = {};
+
+      const deductionRules: Record<string, number> = {
+        'focus-loss': 2,
+        'absence': 5,
+        'multiple-faces': 10,
+        'unauthorized-item': 15,
+        'manual_flag': 0, // manual flags handled separately by severity
+        'background-voice': 8,
+        'multiple-voices': 12,
+        'excessive-noise': 6
       };
 
-    // Calculate integrity score and detailed breakdown
-    let integrityScore = 100;
-    const focusLossDeduction = eventCounts.focusLoss * 2;
-    const absenceDeduction = eventCounts.absence * 5;
-    const multipleFacesDeduction = eventCounts.multipleFaces * 10;
-    const unauthorizedItemsDeduction = eventCounts.unauthorizedItems * 15;
+      violationTypes.forEach(type => {
+        if (type === 'manual_flag') return; // separate pass
+        const per = deductionRules[type] ?? 1;
+        deductions[type] = (counts[type] || 0) * per;
+        integrityScore -= deductions[type];
+      });
 
-    integrityScore -= focusLossDeduction;
-    integrityScore -= absenceDeduction;
-    integrityScore -= multipleFacesDeduction;
-    integrityScore -= unauthorizedItemsDeduction;
+      // Manual observations (existing logic) + manual_flag alerts
+      const flaggedObservations = safeObservations.filter(obs => obs.flagged);
+      let manualObservationsDeduction = 0;
+      flaggedObservations.forEach(obs => {
+        switch (obs.severity) {
+          case 'low': manualObservationsDeduction += 2; break;
+          case 'medium': manualObservationsDeduction += 5; break;
+          case 'high': manualObservationsDeduction += 10; break;
+        }
+      });
+      // Add manual_flag alerts severity-based (approx using alert.severity)
+      safeAlerts.filter(a => a.type === 'manual_flag').forEach(a => {
+        if (a.severity === 'low') manualObservationsDeduction += 2;
+        else if (a.severity === 'medium') manualObservationsDeduction += 5;
+        else manualObservationsDeduction += 10;
+      });
+      deductions['manualObservations'] = manualObservationsDeduction;
+      integrityScore -= manualObservationsDeduction;
 
-    // Deduct for flagged manual observations
-    const flaggedObservations = safeObservations.filter(obs => obs.flagged);
-    let manualObservationsDeduction = 0;
-    flaggedObservations.forEach(obs => {
-      switch (obs.severity) {
-        case 'low': manualObservationsDeduction += 2; break;
-        case 'medium': manualObservationsDeduction += 5; break;
-        case 'high': manualObservationsDeduction += 10; break;
-      }
-    });
-
-    integrityScore -= manualObservationsDeduction;
-    // Allow negative scores to reflect severe violations
-
-    // Create detailed breakdown
-    const totalDeductions = focusLossDeduction + absenceDeduction + multipleFacesDeduction + unauthorizedItemsDeduction + manualObservationsDeduction;
+      const totalDeductions = Object.values(deductions).reduce((s, v) => s + v, 0);
     
-    // Create readable formula
-    const deductionParts = [];
-    if (focusLossDeduction > 0) deductionParts.push(`${eventCounts.focusLoss} focus loss (${focusLossDeduction})`);
-    if (absenceDeduction > 0) deductionParts.push(`${eventCounts.absence} absence (${absenceDeduction})`);
-    if (multipleFacesDeduction > 0) deductionParts.push(`${eventCounts.multipleFaces} multiple faces (${multipleFacesDeduction})`);
-    if (unauthorizedItemsDeduction > 0) deductionParts.push(`${eventCounts.unauthorizedItems} unauthorized items (${unauthorizedItemsDeduction})`);
-    if (manualObservationsDeduction > 0) deductionParts.push(`${flaggedObservations.length} manual flags (${manualObservationsDeduction})`);
+      const deductionParts: string[] = [];
+      Object.entries(deductions).forEach(([type, value]) => {
+        if (!value) return;
+        if (type === 'manualObservations') {
+          deductionParts.push(`${flaggedObservations.length + (counts['manual_flag'] || 0)} manual flags (${value})`);
+        } else {
+          const info = getAlertTypeInfo(type);
+            deductionParts.push(`${counts[type]} ${info.label.toLowerCase()} (${value})`);
+        }
+      });
     
     const formula = deductionParts.length > 0 
       ? `100 - [${deductionParts.join(' + ')}] = ${integrityScore}`
@@ -184,15 +193,8 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
 
     const integrityBreakdown = {
       baseScore: 100,
-      deductions: {
-        focusLoss: focusLossDeduction,
-        absence: absenceDeduction,
-        multipleFaces: multipleFacesDeduction,
-        unauthorizedItems: unauthorizedItemsDeduction,
-        manualObservations: manualObservationsDeduction,
-        total: totalDeductions
-      },
-      finalScore: integrityScore, // Allow negative scores
+      deductions: { ...deductions, total: totalDeductions },
+      finalScore: integrityScore,
       formula
     };
 
@@ -216,11 +218,8 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
     return {
       integrityScore,
       integrityBreakdown,
-      totalEvents: safeEvents.length,
-      focusLossCount: eventCounts.focusLoss,
-      absenceCount: eventCounts.absence,
-      multipleFacesCount: eventCounts.multipleFaces,
-      unauthorizedItemsCount: eventCounts.unauthorizedItems,
+      totalEvents: violationEvents,
+      counts,
       sessionDuration,
       lastEventTime
     };
@@ -230,10 +229,7 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
     return {
       integrityScore: 0,
       totalEvents: 0,
-      focusLossCount: 0,
-      absenceCount: 0,
-      multipleFacesCount: 0,
-      unauthorizedItemsCount: 0,
+      counts: {},
       sessionDuration: 0,
       lastEventTime: undefined
     };
@@ -450,9 +446,9 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
 
   // Update live summary when data changes
   useEffect(() => {
-    const summary = calculateLiveSummary(detectionEvents, manualObservations);
+    const summary = calculateLiveSummary(detectionEvents, manualObservations, alerts);
     setLiveSummary(summary);
-  }, [detectionEvents, manualObservations, calculateLiveSummary]);
+  }, [detectionEvents, manualObservations, alerts, calculateLiveSummary]);
 
   // Initial data fetch
   useEffect(() => {
@@ -473,45 +469,29 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
     loadData();
   }, [fetchDetectionEvents, fetchManualObservations]);
 
-  // Real-time updates from alerts
+  // Real-time updates from alerts (lightweight ingestion for timeline display only)
   useEffect(() => {
     if (!alerts.length || !sessionId || !session.candidateId) return;
-    
     try {
-      const alertEvents: DetectionEvent[] = alerts.map((alert) => {
-        const safeTimestamp = safeToDateWithFallback(alert.timestamp);
-        return {
+      const latest = alerts[0]; // most recent alert first (assuming ordering)
+      if (!latest) return;
+      const safeTimestamp = safeToDateWithFallback(latest.timestamp);
+      const eventTime = safeParseDate(safeTimestamp)?.getTime();
+      if (!eventTime) return;
+      setDetectionEvents(prev => {
+        const exists = prev.some(e => safeParseDate(e.timestamp)?.getTime() === eventTime);
+        if (exists) return prev;
+        return [...prev, {
           sessionId,
           candidateId: session.candidateId,
-          eventType: alert.type,
+          eventType: latest.type,
           timestamp: safeTimestamp,
-          confidence: alert.confidence || 0.8, // Default confidence for alerts
-          metadata: alert.metadata || {}
-        };
+          confidence: latest.confidence || 0.8,
+          metadata: latest.metadata || {}
+        }];
       });
-
-      // Merge with existing events, avoiding duplicates
-      setDetectionEvents(prev => {
-        try {
-          const existingTimestamps = new Set(
-            prev
-              .map(e => safeParseDate(e.timestamp)?.getTime())
-              .filter(time => time !== null && time !== undefined)
-          );
-          
-          const newEvents = alertEvents.filter(e => {
-            const eventTime = safeParseDate(e.timestamp)?.getTime();
-            return eventTime && !existingTimestamps.has(eventTime);
-          });
-          
-          return [...prev, ...newEvents];
-        } catch (error) {
-          console.warn('Error merging detection events:', error);
-          return prev; // Return previous state if merging fails
-        }
-      });
-    } catch (error) {
-      console.error('Error converting alerts to detection events:', error);
+    } catch (err) {
+      console.warn('Alert ingestion error:', err);
     }
   }, [alerts, sessionId, session.candidateId]);
 
@@ -776,7 +756,8 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                           Manual Flags
                         </dt>
                         <dd className="text-lg font-medium text-gray-900">
-                          {manualObservations.filter(obs => obs.flagged).length}
+                          {/* Combine flagged manual observations + manual_flag alerts */}
+                          {manualObservations.filter(obs => obs.flagged).length + (liveSummary.counts['manual_flag'] || 0)}
                         </dd>
                       </dl>
                     </div>
@@ -796,26 +777,33 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                       <div>
                         <h4 className="text-md font-semibold text-gray-900 mb-3">Deduction Breakdown</h4>
                         <div className="space-y-3">
-                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
-                            <span className="text-sm font-medium text-gray-700">Focus Loss ({Math.round(liveSummary.integrityBreakdown.deductions.focusLoss / 2)} incidents × -2 pts)</span>
-                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.focusLoss}</span>
-                          </div>
-                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
-                            <span className="text-sm font-medium text-gray-700">Absence ({Math.round(liveSummary.integrityBreakdown.deductions.absence / 5)} incidents × -5 pts)</span>
-                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.absence}</span>
-                          </div>
-                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
-                            <span className="text-sm font-medium text-gray-700">Multiple Faces ({Math.round(liveSummary.integrityBreakdown.deductions.multipleFaces / 10)} incidents × -10 pts)</span>
-                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.multipleFaces}</span>
-                          </div>
-                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
-                            <span className="text-sm font-medium text-gray-700">Unauthorized Items ({Math.round(liveSummary.integrityBreakdown.deductions.unauthorizedItems / 15)} incidents × -15 pts)</span>
-                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.unauthorizedItems}</span>
-                          </div>
-                          <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
-                            <span className="text-sm font-medium text-gray-700">Manual Flags (variable deduction)</span>
-                            <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.manualObservations}</span>
-                          </div>
+                          {(() => {
+                            const d = liveSummary.integrityBreakdown.deductions;
+                            // Map UI labels to deduction keys used in calculation (which are hyphen-case)
+                            const rows: { key: string; per: number; label: string }[] = [
+                              { key: 'focus-loss', per: 2, label: 'Focus Loss' },
+                              { key: 'absence', per: 5, label: 'Absence' },
+                              { key: 'multiple-faces', per: 10, label: 'Multiple Faces' },
+                              { key: 'unauthorized-item', per: 15, label: 'Unauthorized Items' }
+                            ];
+                            return rows.map(r => {
+                              const raw = (d as any)[r.key] || 0;
+                              if (!raw) return null; // Skip zero deductions
+                              const incidents = Math.round(raw / r.per) || 0;
+                              return (
+                                <div key={r.key} className="flex justify-between items-center p-3 bg-red-50 rounded-md">
+                                  <span className="text-sm font-medium text-gray-700">{r.label} ({incidents} incidents × -{r.per} pts)</span>
+                                  <span className="text-sm font-bold text-red-600">-{raw}</span>
+                                </div>
+                              );
+                            });
+                          })()}
+                          {liveSummary.integrityBreakdown.deductions.manualObservations > 0 && (
+                            <div className="flex justify-between items-center p-3 bg-red-50 rounded-md">
+                              <span className="text-sm font-medium text-gray-700">Manual Flags (variable deduction)</span>
+                              <span className="text-sm font-bold text-red-600">-{liveSummary.integrityBreakdown.deductions.manualObservations}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                       
@@ -853,25 +841,25 @@ export const ReportDashboard: React.FC<ReportDashboardProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div className="text-center">
                       <Eye className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
-                      <div className="text-2xl font-bold text-gray-900">{liveSummary.focusLossCount}</div>
+                      <div className="text-2xl font-bold text-gray-900">{liveSummary.counts['focus-loss'] || 0}</div>
                       <div className="text-sm text-gray-500">Focus Loss</div>
                     </div>
                     
                     <div className="text-center">
                       <X className="w-8 h-8 text-red-500 mx-auto mb-2" />
-                      <div className="text-2xl font-bold text-gray-900">{liveSummary.absenceCount}</div>
+                      <div className="text-2xl font-bold text-gray-900">{liveSummary.counts['absence'] || 0}</div>
                       <div className="text-sm text-gray-500">Absence</div>
                     </div>
                     
                     <div className="text-center">
                       <Users className="w-8 h-8 text-orange-500 mx-auto mb-2" />
-                      <div className="text-2xl font-bold text-gray-900">{liveSummary.multipleFacesCount}</div>
+                      <div className="text-2xl font-bold text-gray-900">{liveSummary.counts['multiple-faces'] || 0}</div>
                       <div className="text-sm text-gray-500">Multiple Faces</div>
                     </div>
                     
                     <div className="text-center">
                       <Phone className="w-8 h-8 text-purple-500 mx-auto mb-2" />
-                      <div className="text-2xl font-bold text-gray-900">{liveSummary.unauthorizedItemsCount}</div>
+                      <div className="text-2xl font-bold text-gray-900">{liveSummary.counts['unauthorized-item'] || 0}</div>
                       <div className="text-sm text-gray-500">Unauthorized Items</div>
                     </div>
                   </div>
