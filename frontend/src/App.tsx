@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { Toaster } from './components/ui/sonner';
 import { AuthPage, ProtectedRoute } from './components/auth';
 import { CandidateDashboard, InterviewerDashboard } from './components/dashboard';
+import ReportDashboardPage from './components/dashboard/ReportDashboardPage';
 
 function App() {
   return (
@@ -28,6 +29,14 @@ function App() {
               element={
                 <ProtectedRoute requiredRole="interviewer">
                   <InterviewerDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/report/:sessionId"
+              element={
+                <ProtectedRoute requiredRole="interviewer">
+                  <ReportDashboardPage />
                 </ProtectedRoute>
               }
             />

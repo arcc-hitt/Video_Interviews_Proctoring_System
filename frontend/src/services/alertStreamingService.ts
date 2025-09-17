@@ -206,16 +206,16 @@ export class AlertStreamingService {
     // Manual flag from interviewer
     this.socket.on('manual_flag_broadcast', (flag: ManualFlag) => {
       const alert: Alert = {
-        type: 'unauthorized-item', // Generic type for manual flags
+        type: 'manual_flag',
         message: `Manual Flag: ${flag.description}`,
         timestamp: flag.timestamp,
         severity: flag.severity
       };
-      
+
       if (this.callbacks.onAlert) {
         this.callbacks.onAlert(alert);
       }
-      
+
       if (this.callbacks.onManualFlag) {
         this.callbacks.onManualFlag(flag);
       }
