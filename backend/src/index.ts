@@ -124,22 +124,25 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json(response);
 });
 
-// Initialize database and start server
+// Start the HTTP server first so Railway can keep the service alive even if
+// MongoDB is unavailable during the initial boot window.
 async function startServer() {
   try {
-    // Connect to database
-    await connectToDatabase();
-    
-    // Create HTTP server
     const server = createServer(app);
-    
-    // Initialize WebSocket service
+
+    // Initialize WebSocket service before accepting traffic.
     const wsService = new WebSocketService(server);
     setWebSocketService(wsService);
-    
-    // Start server
+
     server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+      console.log(`Server running on port ${PORT}`);
+    });
+
+    // Connect to MongoDB in the background so a temporary outage does not
+    // crash the Railway deployment.
+    void connectToDatabase().catch((error) => {
+      console.error('MongoDB connection failed during startup:', error);
+      console.error('The API will remain up, but database-backed routes will fail until the connection is restored.');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
